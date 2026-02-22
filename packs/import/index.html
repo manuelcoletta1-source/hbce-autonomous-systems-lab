@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>HBCE • Evidence Pack Import / Export (Raw-Preserving)</title>
+  <meta name="description" content="Paste an HBCE Evidence Pack JSON and export it as a .json file without changing a single character. Raw-preserving, localStorage vault, fail-closed JSON validity." />
+  <meta name="theme-color" content="#0b0f14" />
+
+  <style>
+    :root{
+      --bg:#0b0f14; --panel:#0f1621; --muted:#93a4b8; --text:#e7eef7;
+      --line:rgba(255,255,255,.10); --bad:#ff6b6b; --ok:#62d28f;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      --sans: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
+    }
+    *{box-sizing:border-box}
+    body{margin:0; background:var(--bg); color:var(--text); font-family:var(--sans)}
+    a{color:inherit; text-decoration:none}
+    .wrap{max-width:1100px; margin:0 auto; padding:28px 18px 54px}
+    .hero{padding:18px 18px; border:1px solid var(--line); border-radius:18px; background:linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.01))}
+    .kicker{color:var(--muted); letter-spacing:.14em; text-transform:uppercase; font-size:12px}
+    h1{margin:8px 0 10px; font-size:28px; line-height:1.1}
+    .lead{margin:0; color:var(--muted); max-width:78ch}
+    .grid{display:grid; gap:14px; grid-template-columns: 1.1fr .9fr; margin-top:14px}
+    @media (max-width: 980px){ .grid{grid-template-columns:1fr} }
+
+    .card{border:1px solid var(--line); border-radius:18px; background:rgba(255,255,255,.02); overflow:hidden}
+    .card h2{margin:0; padding:14px 14px; font-size:14px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); border-bottom:1px solid var(--line)}
+    .card .body{padding:14px}
+    textarea{
+      width:100%; min-height:420px; resize:vertical;
+      font-family:var(--mono); font-size:12px; line-height:1.45;
+      color:var(--text); background:#071019;
+      border:1px solid var(--line); border-radius:12px;
+      padding:12px;
+      outline:none;
+    }
+    .row{display:flex; flex-wrap:wrap; gap:10px; align-items:center}
+    button{
+      border:1px solid var(--line); background:rgba(255,255,255,.03);
+      color:var(--text); padding:10px 12px; border-radius:12px;
+      font-weight:600; cursor:pointer;
+    }
+    button:hover{background:rgba(255,255,255,.05)}
+    .small{font-size:12px; color:var(--muted); margin-top:8px}
+    .pill{
+      display:inline-flex; align-items:center; gap:8px;
+      border:1px solid var(--line); border-radius:999px; padding:8px 10px;
+      font-size:12px; color:var(--muted); background:rgba(255,255,255,.02)
+    }
+    .status{font-weight:800}
+    .ok{color:var(--ok)}
+    .bad{color:var(--bad)}
+    code, pre{font-family:var(--mono)}
+    pre{
+      margin:0; padding:12px; border-radius:12px;
+      border:1px solid var(--line); background:#071019;
+      overflow:auto; font-size:12px; line-height:1.45
+    }
+    .sep{height:1px; background:var(--line); margin:12px 0}
+    .hint{color:var(--muted); font-size:12px; line-height:1.5}
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <div class="hero">
+      <div class="kicker">HBCE • AUTONOMOUS SYSTEMS LAB</div>
+      <h1>Evidence Pack Import / Export (Raw-Preserving)</h1>
+      <p class="lead">
+        Incolla qui il tuo <b>HBCE Evidence Pack JSON</b> e salva su file <b>senza cambiare 1 carattere</b>.
+        Questo evita rotture di <code>pack_hash</code> dovute a ri-serializzazione, ordine chiavi o whitespace.
+        Fail-closed: se non è JSON valido, non passa.
+      </p>
+
+      <div class="row" style="margin-top:12px">
+        <span class="pill"><span class="status" id="statusText">Status: IDLE</span></span>
+        <span class="pill">Vault: <span id="vaultState">EMPTY</span></span>
+        <span class="pill">Extracted: <span id="extracted">—</span></span>
+      </div>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <h2>Paste Evidence Pack (Raw)</h2>
+        <div class="body">
+          <textarea id="raw" spellcheck="false" placeholder='Paste the FULL Evidence Pack JSON here (including pack_hash and signature).'></textarea>
+
+          <div class="row" style="margin-top:10px">
+            <button id="btnValidate">Validate JSON (Fail-Closed)</button>
+            <button id="btnSaveVault">Save to Vault (localStorage)</button>
+            <button id="btnDownload">Download .json (raw-preserving)</button>
+            <button id="btnClear">Clear</button>
+            <button id="btnLoadVault">Load from Vault</button>
+          </div>
+
+          <div class="small">
+            Regola d’oro: <b>non modificare mai il testo dopo che è “final”</b>.
+            Se devi cambiare qualcosa → rigenera un nuovo pack dal Control Core / Evidence Pack generator.
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Diagnostics</h2>
+        <div class="body">
+          <pre id="diag">{ "hint": "Validate → Save → Download. Raw-preserving export keeps your pack_hash stable." }</pre>
+          <div class="sep"></div>
+          <div class="hint">
+            <b>Perché serve raw-preserving?</b><br/>
+            Anche un semplice <i>JSON.stringify</i> può cambiare ordine chiavi o spazi: se <code>pack_hash</code> è calcolato
+            su stringa canonica/precisa, cambiando la forma rompi la prova.<br/><br/>
+            Qui invece il file che scarichi è <b>esattamente</b> il testo incollato (stessa sequenza di byte Unicode).
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+(function(){
+  const $ = (id)=>document.getElementById(id);
+  const rawEl = $("raw");
+  const statusText = $("statusText");
+  const vaultState = $("vaultState");
+  const extracted = $("extracted");
+  const diag = $("diag");
+
+  const VAULT_KEY = "HBCE_EVIDENCE_PACK_RAW_VAULT_v1";
+
+  function setStatus(ok, msg){
+    statusText.textContent = "Status: " + msg;
+    statusText.className = "status " + (ok ? "ok" : "bad");
+  }
+
+  function safeJsonParse(raw){
+    // Fail-closed: reject empty or non-JSON
+    if(!raw || !raw.trim()) throw new Error("EMPTY_INPUT");
+    // Strict parse
+    return JSON.parse(raw);
+  }
+
+  function pick(obj, path){
+    try{
+      return path.split(".").reduce((a,k)=>a && a[k], obj);
+    }catch(_){ return undefined; }
+  }
+
+  function inferFilename(packObj){
+    const p = pick(packObj, "replay.policy_pack") || "PACK";
+    const s = pick(packObj, "replay.scenario_pack") || "SCENARIO";
+    const seed = pick(packObj, "replay.seed");
+    const ts = pick(packObj, "ts");
+    const iso = (typeof ts === "string" && ts.includes("T")) ? ts : new Date().toISOString();
+    const stamp = iso.replaceAll(":","").replaceAll("-","").replaceAll(".","").replace("T","_").replace("Z","Z");
+    const seedPart = (seed !== undefined && seed !== null) ? ("seed-" + String(seed)) : "seed-NA";
+    return `hbce-evidence_${p}__${s}__${seedPart}__${stamp}.json`;
+  }
+
+  function updateVaultBadge(){
+    const v = localStorage.getItem(VAULT_KEY);
+    vaultState.textContent = v ? "READY" : "EMPTY";
+    vaultState.style.color = v ? "var(--ok)" : "var(--muted)";
+  }
+
+  function updateExtracted(packObj){
+    const p = pick(packObj, "replay.policy_pack");
+    const s = pick(packObj, "replay.scenario_pack");
+    const seed = pick(packObj, "replay.seed");
+    if(p && s && (seed !== undefined)){
+      extracted.textContent = `${p} / ${s} / seed=${seed}`;
+      extracted.style.color = "var(--ok)";
+    }else{
+      extracted.textContent = "—";
+      extracted.style.color = "var(--muted)";
+    }
+  }
+
+  function diagSet(obj){
+    diag.textContent = JSON.stringify(obj, null, 2);
+  }
+
+  $("btnValidate").addEventListener("click", ()=>{
+    try{
+      const raw = rawEl.value;
+      const packObj = safeJsonParse(raw);
+
+      // Minimal structural checks (fail-closed for "final pack" expectation)
+      const hasPackHash = typeof packObj.pack_hash === "string" && packObj.pack_hash.length >= 32;
+      const sigAlgo = pick(packObj, "signature.algo");
+      const hasSig = typeof sigAlgo === "string";
+
+      updateExtracted(packObj);
+
+      if(!hasPackHash || !hasSig){
+        setStatus(false, "JSON_OK_BUT_NOT_FINAL (missing pack_hash/signature?)");
+        diagSet({
+          parsed: true,
+          final_pack_expected: true,
+          has_pack_hash: hasPackHash,
+          has_signature: hasSig,
+          note: "If you pasted a draft: open Evidence Pack generator and export the FINAL pack."
+        });
+        return;
+      }
+
+      setStatus(true, "VALID_JSON_FINAL_PACK");
+      diagSet({
+        parsed: true,
+        final_pack: true,
+        proto: packObj.proto || "—",
+        kind: packObj.kind || "—",
+        pack_hash: packObj.pack_hash,
+        signature_algo: sigAlgo,
+        extracted: {
+          policy_pack: pick(packObj, "replay.policy_pack") || null,
+          scenario_pack: pick(packObj, "replay.scenario_pack") || null,
+          seed: pick(packObj, "replay.seed") ?? null
+        },
+        raw_preserving: true
+      });
+    }catch(err){
+      setStatus(false, "INVALID_JSON");
+      diagSet({ parsed:false, error: String(err && err.message || err) });
+      extracted.textContent = "—";
+      extracted.style.color = "var(--muted)";
+    }
+  });
+
+  $("btnSaveVault").addEventListener("click", ()=>{
+    try{
+      const raw = rawEl.value;
+      const packObj = safeJsonParse(raw); // fail-closed: must be valid JSON
+      // store RAW, not JSON.stringify
+      localStorage.setItem(VAULT_KEY, raw);
+      updateVaultBadge();
+      updateExtracted(packObj);
+      setStatus(true, "SAVED_TO_VAULT");
+      diagSet({ saved:true, vault_key: VAULT_KEY, note: "Raw text stored. Download keeps exact bytes you pasted." });
+    }catch(err){
+      setStatus(false, "SAVE_DENIED (INVALID_JSON)");
+      diagSet({ saved:false, error: String(err && err.message || err) });
+    }
+  });
+
+  $("btnLoadVault").addEventListener("click", ()=>{
+    const v = localStorage.getItem(VAULT_KEY);
+    if(!v){
+      setStatus(false, "VAULT_EMPTY");
+      diagSet({ loaded:false, reason:"EMPTY_VAULT" });
+      return;
+    }
+    rawEl.value = v;
+    try{
+      const packObj = safeJsonParse(v);
+      updateExtracted(packObj);
+      setStatus(true, "LOADED_FROM_VAULT");
+      diagSet({ loaded:true, note:"Loaded raw pack from localStorage vault." });
+    }catch(err){
+      setStatus(false, "VAULT_CORRUPT (NOT_JSON)");
+      diagSet({ loaded:false, error:String(err && err.message || err) });
+    }
+  });
+
+  $("btnDownload").addEventListener("click", ()=>{
+    try{
+      const raw = rawEl.value;
+      const packObj = safeJsonParse(raw); // fail-closed
+      const filename = inferFilename(packObj);
+
+      // IMPORTANT: raw-preserving export
+      const blob = new Blob([raw], { type: "application/json;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+
+      setStatus(true, "DOWNLOADED");
+      diagSet({ downloaded:true, filename, raw_preserving:true });
+    }catch(err){
+      setStatus(false, "DOWNLOAD_DENIED (INVALID_JSON)");
+      diagSet({ downloaded:false, error: String(err && err.message || err) });
+    }
+  });
+
+  $("btnClear").addEventListener("click", ()=>{
+    rawEl.value = "";
+    extracted.textContent = "—";
+    extracted.style.color = "var(--muted)";
+    setStatus(true, "CLEARED");
+    diagSet({ cleared:true });
+  });
+
+  // init
+  updateVaultBadge();
+  setStatus(true, "IDLE");
+})();
+</script>
+</body>
+</html>
