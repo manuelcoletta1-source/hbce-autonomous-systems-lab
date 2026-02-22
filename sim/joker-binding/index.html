@@ -1,0 +1,367 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>HBCE • Joker Binding Console</title>
+  <meta name="description" content="Bind Operator ↔ Joker-C2 ↔ Policy/Scenario/Seed. Deterministic hash receipt + append-only local ledger. No backend." />
+  <meta name="theme-color" content="#0b0f14" />
+  <link rel="stylesheet" href="/hbce-autonomous-systems-lab/assets/hbce.css" />
+
+  <style>
+    .hbce-grid2{ display:grid; gap:14px; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); }
+    .hbce-card{ border:1px solid rgba(255,255,255,.08); background:rgba(255,255,255,.02); border-radius:16px; padding:14px; }
+    .hbce-mono{ font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+    .hbce-row{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+    .hbce-btn{
+      border:1px solid rgba(255,255,255,.18);
+      background:rgba(255,255,255,.04);
+      border-radius:12px;
+      padding:10px 12px;
+      cursor:pointer;
+      color:inherit;
+    }
+    .hbce-btn:hover{ background:rgba(255,255,255,.08); }
+    .hbce-input{
+      width:100%;
+      border:1px solid rgba(255,255,255,.14);
+      background:rgba(0,0,0,.25);
+      color:inherit;
+      border-radius:12px;
+      padding:10px 12px;
+      outline:none;
+    }
+    .hbce-small{ opacity:.85; font-size:.92rem; line-height:1.35; }
+    .hbce-pill{
+      display:inline-block;
+      padding:6px 10px;
+      border:1px solid rgba(255,255,255,.14);
+      border-radius:999px;
+      background:rgba(255,255,255,.03);
+      font-size:.9rem;
+    }
+    pre{ white-space:pre-wrap; word-break:break-word; }
+  </style>
+</head>
+
+<body>
+  <div data-hbce="header"></div>
+
+  <main class="hbce-container hbce-main">
+    <section class="hbce-hero">
+      <div class="hbce-hero__kicker">HBCE • AUTONOMOUS SYSTEMS LAB</div>
+      <h1 class="hbce-hero__title">Joker Binding Console</h1>
+      <p class="hbce-hero__lead">
+        Bind <span class="hbce-pill">Operator</span> ↔ <span class="hbce-pill">Joker-C2</span> ↔ <span class="hbce-pill">Policy/Scenario/Seed</span>.
+        Produces a deterministic <b>Binding Receipt</b> (hash-only) and appends it to a local append-only log.
+      </p>
+      <div class="hbce-row">
+        <a class="hbce-btn" href="/hbce-autonomous-systems-lab/sim/control-core/">Open Control Core</a>
+        <a class="hbce-btn" href="/hbce-autonomous-systems-lab/sim/control-core/evidence-pack.html">Open Evidence Pack</a>
+        <a class="hbce-btn" href="/hbce-autonomous-systems-lab/sim/control-core/verifier.html">Open Verifier</a>
+      </div>
+      <p class="hbce-small" style="margin-top:10px;">
+        No backend. Deterministic hashing via WebCrypto (SHA-256). Append-only chain. Fail-closed defaults.
+      </p>
+    </section>
+
+    <section class="hbce-grid2">
+      <div class="hbce-card">
+        <h2 style="margin:0 0 10px 0;">Binding Parameters</h2>
+
+        <label class="hbce-small">Operator ID (human / org)</label>
+        <input id="operatorId" class="hbce-input hbce-mono" value="IPR-3" />
+
+        <div style="height:10px"></div>
+
+        <label class="hbce-small">Joker / AI ID</label>
+        <input id="jokerId" class="hbce-input hbce-mono" value="IPR-AI-0001" />
+
+        <div style="height:10px"></div>
+
+        <div class="hbce-grid2" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr));">
+          <div>
+            <label class="hbce-small">Policy Pack</label>
+            <input id="policyPack" class="hbce-input hbce-mono" value="HUMAN_PROXIMITY" />
+          </div>
+          <div>
+            <label class="hbce-small">Scenario Pack</label>
+            <input id="scenarioPack" class="hbce-input hbce-mono" value="OFFICE" />
+          </div>
+        </div>
+
+        <div style="height:10px"></div>
+
+        <label class="hbce-small">Seed (deterministic replay)</label>
+        <input id="seed" class="hbce-input hbce-mono" value="20260281" inputmode="numeric" />
+
+        <div style="height:10px"></div>
+
+        <label class="hbce-small">Scope Note (what is being bound)</label>
+        <input id="scope" class="hbce-input" value="Joker-C2 decision layer bound to Control Core simulation context." />
+
+        <div style="height:12px"></div>
+
+        <div class="hbce-row">
+          <button id="btnBind" class="hbce-btn">Create Binding Receipt</button>
+          <button id="btnClear" class="hbce-btn">Clear Local Log</button>
+        </div>
+
+        <p class="hbce-small" style="margin-top:10px;">
+          Tip: you can open Control Core with query params:
+          <span class="hbce-mono">?p=POLICY&s=SCENARIO&seed=N</span>
+        </p>
+      </div>
+
+      <div class="hbce-card">
+        <h2 style="margin:0 0 10px 0;">Status</h2>
+
+        <div class="hbce-grid2" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr));">
+          <div>
+            <div class="hbce-small">Local Chain</div>
+            <div id="chainStatus" class="hbce-mono">—</div>
+          </div>
+          <div>
+            <div class="hbce-small">Entries</div>
+            <div id="entryCount" class="hbce-mono">0</div>
+          </div>
+          <div>
+            <div class="hbce-small">Head</div>
+            <div id="headHash" class="hbce-mono">GENESIS</div>
+          </div>
+        </div>
+
+        <div style="height:12px"></div>
+
+        <div class="hbce-row">
+          <button id="btnCopyReceipt" class="hbce-btn">Copy Receipt JSON</button>
+          <button id="btnDownloadReceipt" class="hbce-btn">Download Receipt</button>
+          <button id="btnCopyReplay" class="hbce-btn">Copy Replay Link</button>
+        </div>
+
+        <div style="height:12px"></div>
+
+        <div class="hbce-small">Latest Receipt</div>
+        <pre id="receiptOut" class="hbce-mono" style="min-height:220px; margin:8px 0 0 0;">{}</pre>
+
+        <div style="height:10px"></div>
+
+        <div class="hbce-small">Diagnostics</div>
+        <pre id="diagOut" class="hbce-mono" style="min-height:120px; margin:8px 0 0 0;">{}</pre>
+      </div>
+    </section>
+
+    <section class="hbce-card" style="margin-top:14px;">
+      <h2 style="margin:0 0 10px 0;">Append-Only Binding Log (localStorage)</h2>
+      <p class="hbce-small">
+        Stored locally as an append-only hash chain. Export receipts; keep them immutable.
+      </p>
+      <pre id="logOut" class="hbce-mono" style="min-height:180px; margin:8px 0 0 0;">{}</pre>
+    </section>
+  </main>
+
+<script>
+(() => {
+  const LS_LOG = "hbce_joker_binding_log_v1";
+  const LS_LAST = "hbce_joker_binding_last_receipt_v1";
+
+  const $ = (id) => document.getElementById(id);
+
+  const state = {
+    log: { proto: "HBCE-BINDING-LOG-v1", policy: ["APPEND_ONLY","HASH_CHAIN","AUDIT_FIRST","FAIL_CLOSED"], head: "GENESIS", entries: [] },
+    lastReceipt: null
+  };
+
+  function nowISO(){ return new Date().toISOString(); }
+
+  function stableStringify(obj){
+    if (obj === null || typeof obj !== "object") return JSON.stringify(obj);
+    if (Array.isArray(obj)) return "[" + obj.map(stableStringify).join(",") + "]";
+    const keys = Object.keys(obj).sort();
+    return "{" + keys.map(k => JSON.stringify(k) + ":" + stableStringify(obj[k])).join(",") + "}";
+  }
+
+  async function sha256Hex(str){
+    const data = new TextEncoder().encode(str);
+    const buf = await crypto.subtle.digest("SHA-256", data);
+    const bytes = new Uint8Array(buf);
+    return Array.from(bytes).map(b => b.toString(16).padStart(2,"0")).join("");
+  }
+
+  function load(){
+    try{
+      const raw = localStorage.getItem(LS_LOG);
+      if(raw){
+        const parsed = JSON.parse(raw);
+        if(parsed && parsed.proto === "HBCE-BINDING-LOG-v1" && Array.isArray(parsed.entries)){
+          state.log = parsed;
+        }
+      }
+    }catch(e){}
+    try{
+      const rawR = localStorage.getItem(LS_LAST);
+      if(rawR) state.lastReceipt = JSON.parse(rawR);
+    }catch(e){}
+    render();
+  }
+
+  function persist(){
+    localStorage.setItem(LS_LOG, JSON.stringify(state.log));
+    if(state.lastReceipt) localStorage.setItem(LS_LAST, JSON.stringify(state.lastReceipt));
+  }
+
+  function render(){
+    $("entryCount").textContent = String(state.log.entries.length);
+    $("headHash").textContent = state.log.head || "GENESIS";
+    $("logOut").textContent = JSON.stringify(state.log, null, 2);
+
+    if(state.lastReceipt){
+      $("receiptOut").textContent = JSON.stringify(state.lastReceipt, null, 2);
+    } else {
+      $("receiptOut").textContent = "{}";
+    }
+
+    const ok = verifyChainLocal(state.log);
+    $("chainStatus").textContent = ok ? "OK" : "BROKEN";
+    $("diagOut").textContent = JSON.stringify({ chain: ok ? "OK" : "BROKEN" }, null, 2);
+  }
+
+  function verifyChainLocal(log){
+    if(!log || !Array.isArray(log.entries)) return false;
+    let prev = "GENESIS";
+    for(const e of log.entries){
+      if(e.prev_hash !== prev) return false;
+      prev = e.hash;
+    }
+    return (log.head === (log.entries.length ? log.entries[log.entries.length-1].hash : "GENESIS"));
+  }
+
+  async function createReceipt(){
+    const operatorId = $("operatorId").value.trim() || "UNKNOWN_OPERATOR";
+    const jokerId = $("jokerId").value.trim() || "UNKNOWN_AI";
+    const policyPack = $("policyPack").value.trim() || "UNKNOWN_POLICY";
+    const scenarioPack = $("scenarioPack").value.trim() || "UNKNOWN_SCENARIO";
+    const seedRaw = $("seed").value.trim();
+    const seed = Number.isFinite(Number(seedRaw)) ? Number(seedRaw) : seedRaw;
+    const scope = $("scope").value.trim() || "—";
+
+    const receipt = {
+      proto: "HBCE-BINDING-RECEIPT-v1",
+      kind: "JOKER_C2_BINDING",
+      ts: nowISO(),
+      binding: {
+        operator_id: operatorId,
+        ai_id: jokerId,
+        policy_pack: policyPack,
+        scenario_pack: scenarioPack,
+        seed,
+        scope
+      },
+      policy: ["HASH_ONLY","APPEND_ONLY","AUDIT_FIRST","FAIL_CLOSED"],
+      prev_head: state.log.head || "GENESIS"
+    };
+
+    // deterministic hash of receipt body (without receipt_hash)
+    const body = stableStringify(receipt);
+    const receipt_hash = await sha256Hex(body);
+    receipt.receipt_hash = receipt_hash;
+
+    // append to local chain
+    const entry = {
+      ts: receipt.ts,
+      type: "BINDING_CREATE",
+      receipt_hash,
+      prev_hash: state.log.head || "GENESIS"
+    };
+    const entry_hash = await sha256Hex(stableStringify(entry));
+    entry.hash = entry_hash;
+
+    state.log.entries.push(entry);
+    state.log.head = entry.hash;
+
+    state.lastReceipt = receipt;
+    persist();
+    render();
+
+    $("diagOut").textContent = JSON.stringify({
+      created: true,
+      receipt_hash,
+      log_head: state.log.head,
+      replay_link: buildReplayLink(policyPack, scenarioPack, seed)
+    }, null, 2);
+  }
+
+  function buildReplayLink(p, s, seed){
+    const base = "/hbce-autonomous-systems-lab/sim/control-core/";
+    const qp = `?p=${encodeURIComponent(p)}&s=${encodeURIComponent(s)}&seed=${encodeURIComponent(seed)}`;
+    return location.origin + base + qp;
+  }
+
+  async function copyText(txt){
+    await navigator.clipboard.writeText(txt);
+  }
+
+  function downloadText(filename, txt){
+    const blob = new Blob([txt], {type:"application/json"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 500);
+  }
+
+  function clearLog(){
+    state.log = { proto: "HBCE-BINDING-LOG-v1", policy: ["APPEND_ONLY","HASH_CHAIN","AUDIT_FIRST","FAIL_CLOSED"], head: "GENESIS", entries: [] };
+    state.lastReceipt = null;
+    localStorage.removeItem(LS_LOG);
+    localStorage.removeItem(LS_LAST);
+    render();
+    $("diagOut").textContent = JSON.stringify({ cleared:true }, null, 2);
+  }
+
+  // wire
+  $("btnBind").addEventListener("click", () => createReceipt().catch(e => {
+    $("diagOut").textContent = JSON.stringify({ error:String(e) }, null, 2);
+  }));
+
+  $("btnClear").addEventListener("click", clearLog);
+
+  $("btnCopyReceipt").addEventListener("click", async () => {
+    if(!state.lastReceipt){
+      $("diagOut").textContent = JSON.stringify({ error:"No receipt yet. Click Create Binding Receipt." }, null, 2);
+      return;
+    }
+    await copyText(JSON.stringify(state.lastReceipt, null, 2));
+    $("diagOut").textContent = JSON.stringify({ copied:"receipt_json" }, null, 2);
+  });
+
+  $("btnDownloadReceipt").addEventListener("click", () => {
+    if(!state.lastReceipt){
+      $("diagOut").textContent = JSON.stringify({ error:"No receipt yet. Click Create Binding Receipt." }, null, 2);
+      return;
+    }
+    const b = state.lastReceipt.binding;
+    const filename = `hbce-binding_${b.policy_pack}_${b.scenario_pack}_seed${b.seed}.json`;
+    downloadText(filename, JSON.stringify(state.lastReceipt, null, 2));
+    $("diagOut").textContent = JSON.stringify({ downloaded: filename }, null, 2);
+  });
+
+  $("btnCopyReplay").addEventListener("click", async () => {
+    const p = $("policyPack").value.trim() || "HUMAN_PROXIMITY";
+    const s = $("scenarioPack").value.trim() || "OFFICE";
+    const seedRaw = $("seed").value.trim();
+    const seed = Number.isFinite(Number(seedRaw)) ? Number(seedRaw) : seedRaw;
+    const link = buildReplayLink(p, s, seed);
+    await copyText(link);
+    $("diagOut").textContent = JSON.stringify({ copied_replay_link: link }, null, 2);
+  });
+
+  load();
+})();
+</script>
+
+</body>
+</html>
