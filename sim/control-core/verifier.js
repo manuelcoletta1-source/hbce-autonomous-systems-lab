@@ -42,13 +42,12 @@ async function verifyLedgerChain(ledger){
   let prev = 'GENESIS';
   for(let i=0;i<ledger.entries.length;i++){
     const e = ledger.entries[i];
-    // Recompute entry hash from the same material used in core.js:
-    // payload = { ts, ...event, prev_hash }
-    // entry = { ...payload, hash }
     const { hash, ...payload } = e;
+
     if(payload.prev_hash !== prev){
       return { ok:false, reason:`PREV_HASH_MISMATCH_AT_${i}`, expected_prev: prev, found_prev: payload.prev_hash };
     }
+
     const recomputed = await sha256(JSON.stringify(payload));
     if(recomputed !== hash){
       return { ok:false, reason:`HASH_MISMATCH_AT_${i}`, expected_hash: recomputed, found_hash: hash };
@@ -58,60 +57,31 @@ async function verifyLedgerChain(ledger){
   return { ok:true, head: prev, entries: ledger.entries.length };
 }
 
-/** Verify evidence pack hash: pack_hash == sha256(JSON.stringify(payload_without_pack_hash)) */
+/**
+ * Verify evidence pack hash:
+ * - If pack_hash exists: compare
+ * - If missing: return DRAFT with suggested recomputed hash
+ */
 async function verifyPackHash(pack){
   if(!pack || pack.proto !== 'HBCE-EVIDENCE-PACK-v1'){
-    return { ok:false, reason:'NOT_EVIDENCE_PACK_V1' };
+    return { ok:false, status:'INVALID', reason:'NOT_EVIDENCE_PACK_V1' };
   }
-  if(!pack.pack_hash){
-    return { ok:false, reason:'MISSING_PACK_HASH' };
-  }
+
+  // Recompute from payload without pack_hash (canonical for v1)
   const { pack_hash, ...payload } = pack;
   const recomputed = await sha256(JSON.stringify(payload));
-  return { ok: (recomputed === pack_hash), pack_hash, recomputed };
-}
 
-async function runVerify(){
-  const raw = $('input').value.trim();
-  const pack = safeParse(raw);
-
-  if(!pack){
-    setText('rStatus', 'INVALID_JSON');
-    writeDiag({ error:'Invalid JSON. Paste a full Evidence Pack.' });
-    return;
+  if(!pack_hash){
+    return { ok:false, status:'DRAFT_MISSING_PACK_HASH', reason:'MISSING_PACK_HASH', recomputed };
   }
 
-  const ph = await verifyPackHash(pack);
-  const lc = await verifyLedgerChain(pack.ledger);
-
-  const ok = ph.ok && lc.ok;
-
-  setText('rStatus', ok ? 'VALID' : 'INVALID');
-  setText('rPackHash', ph.pack_hash || '—');
-  setText('rRecomputed', ph.recomputed || '—');
-  setText('rLedger', lc.ok ? 'OK' : `BROKEN (${lc.reason})`);
-  setText('rEntries', lc.entries ?? '—');
-
-  setText('rPolicy', pack?.replay?.policy_pack ?? '—');
-  setText('rScenario', pack?.replay?.scenario_pack ?? '—');
-  setText('rSeed', (pack?.replay?.seed ?? '—'));
-
-  writeDiag({ pack_hash_check: ph, ledger_chain_check: lc, replay: pack.replay, meta: { proto: pack.proto, kind: pack.kind, ts: pack.ts } });
-
-  // store replay link on button
-  $('btnCopyReplayLink').dataset.link = buildReplayLink(pack);
+  const ok = (recomputed === pack_hash);
+  return { ok, status: ok ? 'OK' : 'MISMATCH', pack_hash, recomputed };
 }
 
-function loadFromLocalStorage(){
-  const raw = localStorage.getItem(STORAGE_KEY);
-  const state = safeParse(raw || '');
-  if(!state || !state.ledger){
-    $('input').value = '';
-    writeDiag({ error:'No local state found. Open Control Core first, then Evidence Pack.' });
-    return;
-  }
-  // Rebuild a pack identical to evidence-pack.js (minus pack_hash, we’ll recompute in verify)
-  const draft = {
+/** Build a canonical Evidence Pack v1 from state (and compute pack_hash) */
+async function buildPackFromState(state){
+  const payload = {
     proto: 'HBCE-EVIDENCE-PACK-v1',
     kind: 'CONTROL_CORE_SIM_EVIDENCE',
     ts: new Date().toISOString(),
@@ -124,9 +94,75 @@ function loadFromLocalStorage(){
     environment: { obstacles: state.obstacles || [] },
     ledger: state.ledger || null
   };
-  // Note: pack_hash added only for verification round-trip
-  $('input').value = JSON.stringify(draft, null, 2);
-  writeDiag({ loaded:'localStorage draft (no pack_hash yet). Click Verify to compute and compare once you paste final pack.' });
+  const pack_hash = await sha256(JSON.stringify(payload));
+  return { ...payload, pack_hash };
+}
+
+async function runVerify(){
+  const raw = $('input').value.trim();
+  const pack = safeParse(raw);
+
+  if(!pack){
+    setText('rStatus', 'INVALID_JSON');
+    setText('rPackHash', '—');
+    setText('rRecomputed', '—');
+    setText('rLedger', '—');
+    setText('rEntries', '—');
+    writeDiag({ error:'Invalid JSON. Paste a full Evidence Pack.' });
+    return;
+  }
+
+  const ph = await verifyPackHash(pack);
+  const lc = await verifyLedgerChain(pack.ledger);
+
+  // Status rules:
+  // - VALID only if pack hash OK + ledger OK
+  // - DRAFT if missing pack_hash but ledger OK (we show suggested hash)
+  let status = 'INVALID';
+  if(ph.status === 'OK' && lc.ok) status = 'VALID';
+  else if(ph.status === 'DRAFT_MISSING_PACK_HASH' && lc.ok) status = 'DRAFT';
+  else status = 'INVALID';
+
+  setText('rStatus', status);
+
+  setText('rPackHash', ph.pack_hash || '—');
+  setText('rRecomputed', ph.recomputed || '—');
+  setText('rLedger', lc.ok ? 'OK' : `BROKEN (${lc.reason})`);
+  setText('rEntries', lc.entries ?? '—');
+
+  setText('rPolicy', pack?.replay?.policy_pack ?? '—');
+  setText('rScenario', pack?.replay?.scenario_pack ?? '—');
+  setText('rSeed', (pack?.replay?.seed ?? '—'));
+
+  writeDiag({
+    status,
+    pack_hash_check: ph,
+    ledger_chain_check: lc,
+    replay: pack.replay,
+    meta: { proto: pack.proto, kind: pack.kind, ts: pack.ts }
+  });
+
+  $('btnCopyReplayLink').dataset.link = buildReplayLink(pack);
+}
+
+async function loadFromLocalStorage(){
+  const raw = localStorage.getItem(STORAGE_KEY);
+  const state = safeParse(raw || '');
+
+  if(!state || !state.ledger){
+    $('input').value = '';
+    writeDiag({ error:'No local state found. Open Control Core first, then Evidence Pack.' });
+    return;
+  }
+
+  // Build a FULL pack with pack_hash so Verify can return VALID
+  const pack = await buildPackFromState(state);
+  $('input').value = JSON.stringify(pack, null, 2);
+
+  writeDiag({
+    loaded: 'localStorage',
+    note: 'Built full Evidence Pack v1 (including pack_hash) from local state. Click Verify.'
+  });
 }
 
 async function copyReplayLink(){
@@ -142,12 +178,23 @@ async function copyReplayLink(){
 }
 
 $('btnVerify').addEventListener('click', runVerify);
-$('btnLoadFromLocal').addEventListener('click', loadFromLocalStorage);
-$('btnClear').addEventListener('click', () => { $('input').value = ''; writeDiag({ cleared:true }); });
+$('btnLoadFromLocal').addEventListener('click', () => { loadFromLocalStorage(); });
+$('btnClear').addEventListener('click', () => {
+  $('input').value = '';
+  writeDiag({ cleared:true });
+  setText('rStatus','—');
+  setText('rPackHash','—');
+  setText('rRecomputed','—');
+  setText('rLedger','—');
+  setText('rEntries','—');
+  setText('rPolicy','—');
+  setText('rScenario','—');
+  setText('rSeed','—');
+});
 
 $('btnCopyReplayLink').addEventListener('click', copyReplayLink);
 
-// tiny UX: auto-verify if URL has #autoverify and textarea has content
+// Auto-verify convenience
 if(location.hash === '#autoverify'){
   setTimeout(() => { if($('input').value.trim()) runVerify(); }, 80);
 }
