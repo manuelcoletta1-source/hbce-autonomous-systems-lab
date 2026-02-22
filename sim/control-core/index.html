@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>HBCE Control Core — FAIL-CLOSED Policy Packs</title>
-  <meta name="description" content="Universal machine behavior core. Policy Packs + Scenario Packs. FAIL-CLOSED gate and hash-chained audit log." />
+  <title>HBCE Control Core — Policy Packs + Evidence Export</title>
+  <meta name="description" content="Universal machine behavior core. Policy Packs + Scenario Packs. FAIL-CLOSED gate and hash-chained audit log. Evidence Pack export + replay." />
   <link rel="stylesheet" href="./style.css" />
 </head>
 
@@ -13,7 +13,7 @@
     <div class="brand">
       <div class="brand__kicker">HBCE • Autonomous Systems Lab</div>
       <div class="brand__title">Control Core</div>
-      <div class="brand__sub">Policy Packs • Scenario Packs • FAIL-CLOSED • audit-first</div>
+      <div class="brand__sub">Policy Packs • Scenario Packs • FAIL-CLOSED • audit-first • Evidence Pack</div>
     </div>
 
     <div class="statusbar">
@@ -27,14 +27,14 @@
       <div class="stage__head">
         <div class="hint">
           <b>Mouse</b> moves <b>Operator Target</b>. The drone executes decisions only if policy passes.
-          Use <b>Policy Packs</b> (safety presets) and <b>Scenario Packs</b> (environment presets).
-          Violations block motion and generate audit entries (FAIL-CLOSED).
+          Use <b>Policy Packs</b> and <b>Scenario Packs</b>. Violations block motion and generate audit entries (FAIL-CLOSED).
         </div>
 
         <div class="quick">
           <button class="btn" id="btnReset">Reset</button>
           <button class="btn btn--ghost" id="btnEmit">Emit Event</button>
           <button class="btn btn--ghost" id="btnApplyScenario">Apply Scenario</button>
+          <a class="btn btn--ghost" id="btnEvidence" href="./evidence-pack.html">Open Evidence Pack</a>
         </div>
       </div>
 
@@ -54,7 +54,7 @@
     <aside class="panel">
       <div class="card">
         <h2>Operational Presets</h2>
-        <p class="muted">One click = reconfigures the gate. This is what companies understand.</p>
+        <p class="muted">One click = reconfigures the safety envelope. This is industry-friendly.</p>
 
         <div class="grid2">
           <label class="ctrl">
@@ -80,6 +80,19 @@
           <button class="btn" id="btnApplyPolicy">Apply Policy</button>
           <button class="btn btn--ghost" id="btnRandomObs">Random Obstacles</button>
         </div>
+
+        <div class="grid2" style="margin-top:10px;">
+          <label class="ctrl">
+            <span>RNG SEED (deterministic)</span>
+            <input id="seed" type="number" min="1" max="999999999" step="1" value="20260222" />
+          </label>
+
+          <button class="btn btn--ghost" id="btnShare">Copy Share Link</button>
+        </div>
+
+        <p class="muted" style="margin-top:10px;">
+          Share link encodes: policy pack, scenario pack, seed.
+        </p>
       </div>
 
       <div class="card">
@@ -168,7 +181,7 @@
   </main>
 
   <footer class="footer">
-    <div class="muted">Policy packs make the demo understandable to industry: “one click = new safety envelope”.</div>
+    <div class="muted">Evidence Pack exports a self-contained audit object (pack + scenario + seed + hash-chained ledger).</div>
   </footer>
 
   <script src="./core.js"></script>
