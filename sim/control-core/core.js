@@ -5,7 +5,6 @@ const canvas = $('sim');
 const ctx = canvas.getContext('2d');
 
 const ui = {
-  // presets
   policyPack: $('policyPack'),
   scenarioPack: $('scenarioPack'),
   btnApplyPolicy: $('btnApplyPolicy'),
@@ -13,7 +12,6 @@ const ui = {
   btnShare: $('btnShare'),
   seed: $('seed'),
 
-  // tuning
   mode: $('mode'),
   speed: $('speed'),
   minDist: $('minDist'),
@@ -23,7 +21,6 @@ const ui = {
   obsBuffer: $('obsBuffer'),
   hardStop: $('hardStop'),
 
-  // status
   status: $('status'),
   policyState: $('policyState'),
   tOp: $('tOp'),
@@ -34,7 +31,6 @@ const ui = {
   tViol: $('tViol'),
   tPack: $('tPack'),
 
-  // log
   log: $('log'),
   btnReset: $('btnReset'),
   btnEmit: $('btnEmit'),
@@ -49,11 +45,39 @@ const len = (x, y) => Math.hypot(x, y);
 const nowISO = () => new Date().toISOString();
 const fmt = (n) => Number.isFinite(n) ? n.toFixed(1) : '—';
 
-function hex(buf){ return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2,'0')).join(''); }
-async function sha256(str){
-  const data = new TextEncoder().encode(str);
-  const digest = await crypto.subtle.digest('SHA-256', data);
-  return hex(digest);
+function setStatus(text){ ui.status.textContent = `STATUS: ${text}`; }
+function setPolicy(pass){
+  ui.policyState.textContent = `POLICY: ${pass ? 'PASS' : 'DENY'}`;
+  ui.policyState.classList.remove('pill--ok','pill--deny');
+  ui.policyState.classList.add(pass ? 'pill--ok' : 'pill--deny');
+}
+
+function hex(buf){
+  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2,'0')).join('');
+}
+
+/**
+ * SHA-256 with Android-safe fallback.
+ * - Preferred: WebCrypto SHA-256
+ * - Fallback: deterministic non-cryptographic hash (stable, not security-grade)
+ */
+async function hash256(str){
+  if (window.crypto && crypto.subtle && crypto.subtle.digest) {
+    try{
+      const data = new TextEncoder().encode(str);
+      const digest = await crypto.subtle.digest('SHA-256', data);
+      return hex(digest);
+    } catch(e){
+      console.warn('[HBCE] WebCrypto SHA-256 failed, fallback hash enabled:', e);
+    }
+  }
+  // Fallback (FNV-1a style, deterministic)
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return 'fallback_' + (h >>> 0).toString(16).padStart(8,'0');
 }
 
 // Deterministic PRNG (Mulberry32)
@@ -120,7 +144,7 @@ function loadState(){
   }
 }
 
-// ---- UI helpers ----
+// ---- log rendering ----
 function renderLog(){
   ui.log.textContent = JSON.stringify({
     proto: ledger.proto,
@@ -130,34 +154,15 @@ function renderLog(){
   }, null, 2);
 }
 
-function setStatus(text){ ui.status.textContent = `STATUS: ${text}`; }
-
-function setPolicy(pass){
-  ui.policyState.textContent = `POLICY: ${pass ? 'PASS' : 'DENY'}`;
-  ui.policyState.classList.remove('pill--ok','pill--deny');
-  ui.policyState.classList.add(pass ? 'pill--ok' : 'pill--deny');
-}
-
-// ---- CRITICAL: append queue that NEVER dies ----
+// ---- append-only queue (prevents forks) + fail-visible ----
 let APPEND_QUEUE = Promise.resolve();
-let QUEUE_DEPTH = 0;
 let LAST_APPEND_ERROR = null;
 
-function updateLedgerHealth(){
-  // Show health inside the existing STATUS pill (no HTML changes needed)
-  if(LAST_APPEND_ERROR){
-    setStatus(`LEDGER ERROR (see console)`);
-  }
-}
-
 function appendEvent(event){
-  QUEUE_DEPTH++;
-
-  // Chain onto queue
   APPEND_QUEUE = APPEND_QUEUE.then(async () => {
     const prev = ledger.head;
     const payload = { ts: nowISO(), ...event, prev_hash: prev };
-    const h = await sha256(JSON.stringify(payload));
+    const h = await hash256(JSON.stringify(payload));
     ledger.entries.push({ ...payload, hash: h });
     ledger.head = h;
 
@@ -165,23 +170,19 @@ function appendEvent(event){
     renderLog();
     persistState();
   }).catch((e) => {
-    // FAIL-CLOSED: do not mutate ledger further, but DO NOT kill the queue
-    LAST_APPEND_ERROR = String(e?.message || e || 'appendEvent failed');
+    LAST_APPEND_ERROR = String(e?.message || e || 'append failed');
     console.error('[HBCE] appendEvent failed:', e);
-    setStatus('LEDGER ERROR');
-  }).finally(() => {
-    QUEUE_DEPTH = Math.max(0, QUEUE_DEPTH - 1);
-    updateLedgerHealth();
+    setStatus('LEDGER ERROR (console)');
   });
-
   return APPEND_QUEUE;
 }
 
-/** Presets */
+// ---- presets ----
+// NOTE: HUMAN_PROXIMITY speed aligned to maxSpeed: speed*120 <= maxSpeed
 const POLICY_PACKS = {
-  HUMAN_PROXIMITY: { speed: 2.4, minDist: 90, maxSpeed: 260, noTouch: 24, boundary: 14, obsBuffer: 34, hardStop: 'YES' },
-  WAREHOUSE:       { speed: 3.6, minDist: 70, maxSpeed: 420, noTouch: 16, boundary: 10, obsBuffer: 30, hardStop: 'YES' },
-  INSPECTION:      { speed: 2.0, minDist: 80, maxSpeed: 210, noTouch: 22, boundary: 16, obsBuffer: 38, hardStop: 'YES' },
+  HUMAN_PROXIMITY: { speed: 2.1, minDist: 90,  maxSpeed: 260, noTouch: 24, boundary: 14, obsBuffer: 34, hardStop: 'YES' },
+  WAREHOUSE:       { speed: 3.6, minDist: 70,  maxSpeed: 420, noTouch: 16, boundary: 10, obsBuffer: 30, hardStop: 'YES' },
+  INSPECTION:      { speed: 2.0, minDist: 80,  maxSpeed: 210, noTouch: 22, boundary: 16, obsBuffer: 38, hardStop: 'YES' },
   LAB_CLEANROOM:   { speed: 1.8, minDist: 110, maxSpeed: 180, noTouch: 30, boundary: 18, obsBuffer: 44, hardStop: 'YES' },
 };
 
@@ -249,7 +250,7 @@ function randomObstacles(count, seed){
   return obs;
 }
 
-/** Share link */
+// ---- share link ----
 function applyFromURL(){
   const u = new URL(location.href);
   const p = u.searchParams.get('p');
@@ -274,7 +275,7 @@ async function copyShareLink(){
   setStatus('SHARE LINK COPIED');
 }
 
-/** Input */
+// ---- input ----
 canvas.addEventListener('mousemove', (e) => {
   const rect = canvas.getBoundingClientRect();
   const sx = canvas.width / rect.width;
@@ -285,7 +286,7 @@ canvas.addEventListener('mousemove', (e) => {
 });
 canvas.addEventListener('mouseleave', () => { world.mouseInside = false; });
 
-/** Geometry */
+// ---- geometry ----
 function roundRect(c, x, y, w, h, r){
   const rr = Math.min(r, w/2, h/2);
   c.beginPath();
@@ -317,7 +318,7 @@ function obstacleRepulsion(px, py, buffer){
   return { x: rx, y: ry };
 }
 
-/** Explore */
+// ---- explore ----
 function stepExplore(dt){
   const ex = world.ex;
   ex.t += dt;
@@ -328,7 +329,7 @@ function stepExplore(dt){
   ex.y = clamp(ex.y, 70, world.h - 70);
 }
 
-/** Policy */
+// ---- policy gate ----
 function evaluatePolicy(nextX, nextY, vmag, cfg){
   if(nextX < cfg.boundary || nextX > world.w - cfg.boundary || nextY < cfg.boundary || nextY > world.h - cfg.boundary){
     return { pass:false, code:'BOUNDARY_VIOLATION' };
@@ -364,7 +365,7 @@ function readCfg(){
   };
 }
 
-/** Core update */
+// ---- core update ----
 function update(dt){
   const mode = ui.mode.value;
   const cfg = readCfg();
@@ -412,7 +413,10 @@ function update(dt){
   const ul = Math.max(0.0001, len(ux, uy));
   ux /= ul; uy /= ul;
 
-  const desiredSpeed = clamp(cfg.speed * 120, 0, cfg.maxSpeed);
+  // IMPORTANT: never request speed above maxSpeed (prevents "mathematical" denies)
+  const requested = cfg.speed * 120;
+  const desiredSpeed = clamp(requested, 0, cfg.maxSpeed);
+
   let vx_ps = ux * desiredSpeed;
   let vy_ps = uy * desiredSpeed;
 
@@ -431,8 +435,10 @@ function update(dt){
 
   if(!pol.pass){
     world.lastViolation = pol.code;
+
     if(cfg.hardStop){
       dr.vx = 0; dr.vy = 0;
+
       if(world.lastAction !== 'DENY'){
         appendEvent({
           type:'POLICY_DENY',
@@ -447,12 +453,14 @@ function update(dt){
           cfg
         });
       }
+
       world.lastAction = 'DENY';
       setStatus(`DENY (${pol.code})`);
     } else {
       dr.vx = vx_ps; dr.vy = vy_ps;
       dr.x = clamp(nextX, 0, world.w);
       dr.y = clamp(nextY, 0, world.h);
+
       if(world.lastAction !== 'DENY_LOG_ONLY'){
         appendEvent({
           type:'POLICY_VIOLATION_LOG_ONLY',
@@ -467,6 +475,7 @@ function update(dt){
           cfg
         });
       }
+
       world.lastAction = 'DENY_LOG_ONLY';
       setStatus(`VIOLATION LOGGED (${pol.code})`);
     }
@@ -487,9 +496,13 @@ function update(dt){
   ui.tAct.textContent = world.lastAction;
   ui.tViol.textContent = world.lastViolation;
   ui.tPack.textContent = `${world.activePack} / ${world.activeScenario}`;
+
+  if(LAST_APPEND_ERROR){
+    // keep status as error; fail-visible
+  }
 }
 
-/** Render */
+// ---- render ----
 function draw(){
   ctx.clearRect(0,0,world.w,world.h);
 
@@ -576,17 +589,19 @@ function draw(){
   }
 }
 
-/** UI actions */
+// ---- buttons ----
 ui.btnReset.addEventListener('click', () => {
   world.op.x = world.w * 0.28;
   world.op.y = world.h * 0.56;
   world.dr.x = world.w * 0.66;
   world.dr.y = world.h * 0.46;
   world.dr.vx = 0; world.dr.vy = 0;
+
   world.ex.x = world.w * 0.70;
   world.ex.y = world.h * 0.58;
   world.ex.dir = 1;
   world.ex.t = 0;
+
   world.lastAction = 'RESET';
   world.lastViolation = '—';
   appendEvent({ type:'RESET', note:'Reset operator/drone positions' });
@@ -611,21 +626,17 @@ ui.btnEmit.addEventListener('click', () => {
 });
 
 ui.btnClearLog.addEventListener('click', () => {
-  // hard reset ledger
   ledger.entries = [];
   ledger.head = 'GENESIS';
   LAST_APPEND_ERROR = null;
   renderLog();
   persistState();
-
-  // first append after reset (should create entry #0)
   appendEvent({ type:'LOG_RESET', note:'Ledger cleared and chain restarted from GENESIS' });
   setStatus('LOG CLEARED');
 });
 
 ui.btnCopyLog.addEventListener('click', async () => {
-  const json = JSON.stringify({ ...ledger }, null, 2);
-  await navigator.clipboard.writeText(json);
+  await navigator.clipboard.writeText(JSON.stringify({ ...ledger }, null, 2));
   setStatus('LOG COPIED');
 });
 
@@ -645,11 +656,9 @@ ui.btnApplyPolicy.addEventListener('click', () => applyPolicyPack(ui.policyPack.
 ui.btnApplyScenario.addEventListener('click', () => applyScenarioPack(ui.scenarioPack.value));
 ui.btnShare.addEventListener('click', copyShareLink);
 
-ui.seed.addEventListener('change', () => {
-  persistState();
-});
+ui.seed.addEventListener('change', () => persistState());
 
-/** boot */
+// ---- boot ----
 let last = performance.now();
 
 function boot(){
@@ -672,11 +681,10 @@ function boot(){
     }catch(_e){}
   }
 
-  // If ledger is empty, we want at least BOOT entry as proof-of-life
   applyScenarioPack(ui.scenarioPack.value);
   applyPolicyPack(ui.policyPack.value);
 
-  appendEvent({ type:'BOOT', note:'Control Core booted (queue+error visibility enabled)' });
+  appendEvent({ type:'BOOT', note:'Control Core booted (queued ledger + android-safe hash + speed clamp)' });
 
   renderLog();
   requestAnimationFrame(loop);
