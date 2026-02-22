@@ -10,6 +10,8 @@ const ui = {
   scenarioPack: $('scenarioPack'),
   btnApplyPolicy: $('btnApplyPolicy'),
   btnApplyScenario: $('btnApplyScenario'),
+  btnShare: $('btnShare'),
+  seed: $('seed'),
 
   // tuning
   mode: $('mode'),
@@ -54,6 +56,17 @@ async function sha256(str){
   return hex(digest);
 }
 
+// Deterministic PRNG (Mulberry32)
+function mulberry32(seed){
+  let a = seed >>> 0;
+  return function(){
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
 const world = {
   w: canvas.width,
   h: canvas.height,
@@ -75,6 +88,35 @@ const ledger = {
   head: 'GENESIS'
 };
 
+const STORAGE_KEY = 'HBCE_CONTROL_CORE_STATE_V1';
+
+function persistState(){
+  const state = {
+    ts: nowISO(),
+    activePack: world.activePack,
+    activeScenario: world.activeScenario,
+    seed: Number(ui.seed.value || 0),
+    cfg: readCfg(),
+    ledger: { ...ledger },
+    obstacles: world.obstacles,
+  };
+  try{
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  }catch(_e){
+    // ignore
+  }
+}
+
+function loadState(){
+  try{
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if(!raw) return null;
+    return JSON.parse(raw);
+  }catch(_e){
+    return null;
+  }
+}
+
 async function appendEvent(event){
   const prev = ledger.head;
   const payload = { ts: nowISO(), ...event, prev_hash: prev };
@@ -82,6 +124,7 @@ async function appendEvent(event){
   ledger.entries.push({ ...payload, hash: h });
   ledger.head = h;
   renderLog();
+  persistState();
 }
 
 function renderLog(){
@@ -109,22 +152,22 @@ const POLICY_PACKS = {
 };
 
 const SCENARIO_PACKS = {
-  OFFICE: () => [
+  OFFICE: () => ([
     { x: 380, y: 130, w: 160, h: 70 },
     { x: 640, y: 330, w: 190, h: 80 },
     { x: 220, y: 360, w: 130, h: 70 },
-  ],
-  WAREHOUSE: () => [
+  ]),
+  WAREHOUSE: () => ([
     { x: 220, y: 120, w: 520, h: 60 },
     { x: 240, y: 260, w: 500, h: 60 },
     { x: 260, y: 400, w: 480, h: 60 },
-  ],
-  CORRIDOR: () => [
+  ]),
+  CORRIDOR: () => ([
     { x: 200, y: 80,  w: 580, h: 60 },
     { x: 200, y: 420, w: 580, h: 60 },
     { x: 420, y: 180, w: 140, h: 200 },
-  ],
-  CLUTTERED: () => randomObstacles(7),
+  ]),
+  CLUTTERED: () => randomObstacles(7, Number(ui.seed.value || 1)),
 };
 
 function applyPolicyPack(name){
@@ -140,9 +183,10 @@ function applyPolicyPack(name){
   ui.obsBuffer.value = p.obsBuffer;
   ui.hardStop.value = p.hardStop;
 
-  ui.tPack.textContent = name;
+  ui.tPack.textContent = `${world.activePack} / ${world.activeScenario}`;
   appendEvent({ type:'POLICY_PACK_APPLIED', pack: name, cfg: p });
   setStatus(`POLICY PACK: ${name}`);
+  persistState();
 }
 
 function applyScenarioPack(name){
@@ -150,22 +194,50 @@ function applyScenarioPack(name){
   if(!fn) return;
   world.activeScenario = name;
   world.obstacles = fn();
-  appendEvent({ type:'SCENARIO_PACK_APPLIED', scenario: name, obstacles: world.obstacles.length });
+  appendEvent({ type:'SCENARIO_PACK_APPLIED', scenario: name, obstacles: world.obstacles.length, seed: Number(ui.seed.value || 0) });
   setStatus(`SCENARIO: ${name}`);
+  ui.tPack.textContent = `${world.activePack} / ${world.activeScenario}`;
+  persistState();
 }
 
-function randomObstacles(count = 4){
+function randomObstacles(count, seed){
+  const rnd = mulberry32((seed || 1) >>> 0);
   const obs = [];
   for(let i=0;i<count;i++){
-    const w = 80 + Math.random()*170;
-    const h = 50 + Math.random()*120;
+    const w = 80 + rnd()*170;
+    const h = 50 + rnd()*120;
     obs.push({
-      x: 30 + Math.random()*(world.w - w - 60),
-      y: 30 + Math.random()*(world.h - h - 60),
+      x: 30 + rnd()*(world.w - w - 60),
+      y: 30 + rnd()*(world.h - h - 60),
       w, h
     });
   }
   return obs;
+}
+
+/** Share link: ?p=PACK&s=SCENARIO&seed=123 */
+function applyFromURL(){
+  const u = new URL(location.href);
+  const p = u.searchParams.get('p');
+  const s = u.searchParams.get('s');
+  const seed = u.searchParams.get('seed');
+
+  if(seed){
+    const n = clamp(parseInt(seed,10) || 1, 1, 999999999);
+    ui.seed.value = String(n);
+  }
+  if(p && POLICY_PACKS[p]) ui.policyPack.value = p;
+  if(s && SCENARIO_PACKS[s]) ui.scenarioPack.value = s;
+}
+
+async function copyShareLink(){
+  const base = location.origin + location.pathname;
+  const u = new URL(base);
+  u.searchParams.set('p', ui.policyPack.value);
+  u.searchParams.set('s', ui.scenarioPack.value);
+  u.searchParams.set('seed', String(Number(ui.seed.value || 1)));
+  await navigator.clipboard.writeText(u.toString());
+  setStatus('SHARE LINK COPIED');
 }
 
 /** Input */
@@ -193,8 +265,6 @@ function roundRect(c, x, y, w, h, r){
 function pointInRect(px, py, r){
   return px >= r.x && px <= (r.x + r.w) && py >= r.y && py <= (r.y + r.h);
 }
-
-/** Obstacle repulsion (soft) */
 function obstacleRepulsion(px, py, buffer){
   let rx = 0, ry = 0;
   const margin = buffer;
@@ -224,7 +294,7 @@ function stepExplore(dt){
   ex.y = clamp(ex.y, 70, world.h - 70);
 }
 
-/** FAIL-CLOSED policy evaluation */
+/** Policy */
 function evaluatePolicy(nextX, nextY, vmag, cfg){
   if(nextX < cfg.boundary || nextX > world.w - cfg.boundary || nextY < cfg.boundary || nextY > world.h - cfg.boundary){
     return { pass:false, code:'BOUNDARY_VIOLATION' };
@@ -330,7 +400,18 @@ function update(dt){
     if(cfg.hardStop){
       dr.vx = 0; dr.vy = 0;
       if(world.lastAction !== 'DENY'){
-        appendEvent({ type:'POLICY_DENY', code: pol.code, mode, action, pack: world.activePack, scenario: world.activeScenario, operator:{x:op.x,y:op.y}, drone:{x:dr.x,y:dr.y}, cfg });
+        appendEvent({
+          type:'POLICY_DENY',
+          code: pol.code,
+          mode,
+          action,
+          pack: world.activePack,
+          scenario: world.activeScenario,
+          seed: Number(ui.seed.value || 0),
+          operator:{x:op.x,y:op.y},
+          drone:{x:dr.x,y:dr.y},
+          cfg
+        });
       }
       world.lastAction = 'DENY';
       setStatus(`DENY (${pol.code})`);
@@ -339,7 +420,18 @@ function update(dt){
       dr.x = clamp(nextX, 0, world.w);
       dr.y = clamp(nextY, 0, world.h);
       if(world.lastAction !== 'DENY_LOG_ONLY'){
-        appendEvent({ type:'POLICY_VIOLATION_LOG_ONLY', code: pol.code, mode, action, pack: world.activePack, scenario: world.activeScenario, operator:{x:op.x,y:op.y}, drone_next:{x:dr.x,y:dr.y}, cfg });
+        appendEvent({
+          type:'POLICY_VIOLATION_LOG_ONLY',
+          code: pol.code,
+          mode,
+          action,
+          pack: world.activePack,
+          scenario: world.activeScenario,
+          seed: Number(ui.seed.value || 0),
+          operator:{x:op.x,y:op.y},
+          drone_next:{x:dr.x,y:dr.y},
+          cfg
+        });
       }
       world.lastAction = 'DENY_LOG_ONLY';
       setStatus(`VIOLATION LOGGED (${pol.code})`);
@@ -367,7 +459,6 @@ function update(dt){
 function draw(){
   ctx.clearRect(0,0,world.w,world.h);
 
-  // grid
   ctx.save();
   ctx.globalAlpha = 0.22;
   ctx.beginPath();
@@ -377,7 +468,6 @@ function draw(){
   ctx.stroke();
   ctx.restore();
 
-  // obstacles
   for(const o of world.obstacles){
     ctx.save();
     ctx.fillStyle = 'rgba(255,255,255,0.06)';
@@ -388,7 +478,6 @@ function draw(){
     ctx.restore();
   }
 
-  // rings
   const cfg = readCfg();
   const op = world.op;
   const dr = world.dr;
@@ -409,7 +498,6 @@ function draw(){
   ctx.stroke();
   ctx.restore();
 
-  // link
   ctx.save();
   ctx.beginPath();
   ctx.moveTo(op.x, op.y);
@@ -418,7 +506,6 @@ function draw(){
   ctx.stroke();
   ctx.restore();
 
-  // operator
   ctx.save();
   ctx.beginPath();
   ctx.arc(op.x, op.y, op.r, 0, Math.PI*2);
@@ -428,7 +515,6 @@ function draw(){
   ctx.stroke();
   ctx.restore();
 
-  // drone
   ctx.save();
   ctx.beginPath();
   ctx.arc(dr.x, dr.y, dr.r, 0, Math.PI*2);
@@ -438,7 +524,6 @@ function draw(){
   ctx.stroke();
   ctx.restore();
 
-  // explore marker
   if(ui.mode.value === 'EXPLORE_SAFE'){
     ctx.save();
     ctx.beginPath();
@@ -481,6 +566,7 @@ ui.btnEmit.addEventListener('click', async () => {
     mode: ui.mode.value,
     pack: world.activePack,
     scenario: world.activeScenario,
+    seed: Number(ui.seed.value || 0),
     cfg,
     operator: { x: world.op.x, y: world.op.y },
     drone: { x: world.dr.x, y: world.dr.y },
@@ -494,6 +580,7 @@ ui.btnClearLog.addEventListener('click', () => {
   ledger.entries = [];
   ledger.head = 'GENESIS';
   renderLog();
+  persistState();
   setStatus('LOG CLEARED');
 });
 
@@ -504,8 +591,8 @@ ui.btnCopyLog.addEventListener('click', async () => {
 });
 
 ui.btnRandomObs.addEventListener('click', async () => {
-  world.obstacles = randomObstacles(5);
-  await appendEvent({ type:'OBSTACLES_RANDOMIZED', count: world.obstacles.length });
+  world.obstacles = randomObstacles(5, Number(ui.seed.value || 1));
+  await appendEvent({ type:'OBSTACLES_RANDOMIZED', count: world.obstacles.length, seed: Number(ui.seed.value || 0) });
   setStatus('OBSTACLES RANDOMIZED');
 });
 
@@ -515,33 +602,40 @@ ui.btnClearObs.addEventListener('click', async () => {
   setStatus('OBSTACLES CLEARED');
 });
 
-ui.btnApplyPolicy.addEventListener('click', () => {
-  applyPolicyPack(ui.policyPack.value);
-});
+ui.btnApplyPolicy.addEventListener('click', () => applyPolicyPack(ui.policyPack.value));
+ui.btnApplyScenario.addEventListener('click', () => applyScenarioPack(ui.scenarioPack.value));
+ui.btnShare.addEventListener('click', copyShareLink);
 
-ui.btnApplyScenario.addEventListener('click', () => {
-  applyScenarioPack(ui.scenarioPack.value);
-});
-
-$('btnApplyScenario').addEventListener('click', () => {
-  applyScenarioPack(ui.scenarioPack.value);
-});
-
-$('btnApplyPolicy').addEventListener('click', () => {
-  applyPolicyPack(ui.policyPack.value);
-});
-
-$('btnApplyScenario').addEventListener('click', () => {
-  applyScenarioPack(ui.scenarioPack.value);
+ui.seed.addEventListener('change', () => {
+  persistState();
 });
 
 /** boot */
 let last = performance.now();
 
 async function boot(){
-  applyScenarioPack('OFFICE');
-  applyPolicyPack('HUMAN_PROXIMITY');
-  await appendEvent({ type:'BOOT', note:'Control Core booted (Policy Packs enabled)' });
+  applyFromURL();
+
+  const saved = loadState();
+  if(saved && !location.search){
+    // restore last local state only if no share params are present
+    try{
+      ui.seed.value = String(saved.seed ?? ui.seed.value);
+      if(saved.activePack && POLICY_PACKS[saved.activePack]) ui.policyPack.value = saved.activePack;
+      if(saved.activeScenario && SCENARIO_PACKS[saved.activeScenario]) ui.scenarioPack.value = saved.activeScenario;
+
+      // restore ledger
+      if(saved.ledger && Array.isArray(saved.ledger.entries)){
+        ledger.entries = saved.ledger.entries;
+        ledger.head = saved.ledger.head || 'GENESIS';
+      }
+    }catch(_e){}
+  }
+
+  applyScenarioPack(ui.scenarioPack.value);
+  applyPolicyPack(ui.policyPack.value);
+
+  await appendEvent({ type:'BOOT', note:'Control Core booted (Evidence + Share enabled)' });
   renderLog();
   requestAnimationFrame(loop);
 }
