@@ -103,8 +103,9 @@ function persistState(){
   };
   try{
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  }catch(_e){
-    // ignore
+  }catch(e){
+    console.error('[HBCE] persistState failed:', e);
+    setStatus('ERROR: STORAGE WRITE FAILED');
   }
 }
 
@@ -113,7 +114,8 @@ function loadState(){
     const raw = localStorage.getItem(STORAGE_KEY);
     if(!raw) return null;
     return JSON.parse(raw);
-  }catch(_e){
+  }catch(e){
+    console.error('[HBCE] loadState failed:', e);
     return null;
   }
 }
@@ -124,30 +126,52 @@ function renderLog(){
     proto: ledger.proto,
     policy: ledger.policy,
     head: ledger.head,
-    entries: ledger.entries.slice(-80)
+    entries: ledger.entries
   }, null, 2);
 }
+
 function setStatus(text){ ui.status.textContent = `STATUS: ${text}`; }
+
 function setPolicy(pass){
   ui.policyState.textContent = `POLICY: ${pass ? 'PASS' : 'DENY'}`;
   ui.policyState.classList.remove('pill--ok','pill--deny');
   ui.policyState.classList.add(pass ? 'pill--ok' : 'pill--deny');
 }
 
-// ---- CRITICAL FIX: append queue (prevents hash-chain fork) ----
+// ---- CRITICAL: append queue that NEVER dies ----
 let APPEND_QUEUE = Promise.resolve();
+let QUEUE_DEPTH = 0;
+let LAST_APPEND_ERROR = null;
+
+function updateLedgerHealth(){
+  // Show health inside the existing STATUS pill (no HTML changes needed)
+  if(LAST_APPEND_ERROR){
+    setStatus(`LEDGER ERROR (see console)`);
+  }
+}
 
 function appendEvent(event){
+  QUEUE_DEPTH++;
+
+  // Chain onto queue
   APPEND_QUEUE = APPEND_QUEUE.then(async () => {
     const prev = ledger.head;
     const payload = { ts: nowISO(), ...event, prev_hash: prev };
     const h = await sha256(JSON.stringify(payload));
     ledger.entries.push({ ...payload, hash: h });
     ledger.head = h;
+
+    LAST_APPEND_ERROR = null;
     renderLog();
     persistState();
-  }).catch((_e) => {
-    // fail-closed for audit: we do not mutate state on error
+  }).catch((e) => {
+    // FAIL-CLOSED: do not mutate ledger further, but DO NOT kill the queue
+    LAST_APPEND_ERROR = String(e?.message || e || 'appendEvent failed');
+    console.error('[HBCE] appendEvent failed:', e);
+    setStatus('LEDGER ERROR');
+  }).finally(() => {
+    QUEUE_DEPTH = Math.max(0, QUEUE_DEPTH - 1);
+    updateLedgerHealth();
   });
 
   return APPEND_QUEUE;
@@ -225,7 +249,7 @@ function randomObstacles(count, seed){
   return obs;
 }
 
-/** Share link: ?p=PACK&s=SCENARIO&seed=123 */
+/** Share link */
 function applyFromURL(){
   const u = new URL(location.href);
   const p = u.searchParams.get('p');
@@ -553,7 +577,7 @@ function draw(){
 }
 
 /** UI actions */
-ui.btnReset.addEventListener('click', async () => {
+ui.btnReset.addEventListener('click', () => {
   world.op.x = world.w * 0.28;
   world.op.y = world.h * 0.56;
   world.dr.x = world.w * 0.66;
@@ -565,13 +589,13 @@ ui.btnReset.addEventListener('click', async () => {
   world.ex.t = 0;
   world.lastAction = 'RESET';
   world.lastViolation = '—';
-  await appendEvent({ type:'RESET', note:'Reset operator/drone positions' });
+  appendEvent({ type:'RESET', note:'Reset operator/drone positions' });
   setStatus('READY');
 });
 
-ui.btnEmit.addEventListener('click', async () => {
+ui.btnEmit.addEventListener('click', () => {
   const cfg = readCfg();
-  await appendEvent({
+  appendEvent({
     type:'MANUAL_EVENT',
     mode: ui.mode.value,
     pack: world.activePack,
@@ -586,13 +610,16 @@ ui.btnEmit.addEventListener('click', async () => {
   setStatus('EVENT EMITTED');
 });
 
-ui.btnClearLog.addEventListener('click', async () => {
-  // IMPORTANT: to guarantee chain integrity, clear also resets head and entries atomically
+ui.btnClearLog.addEventListener('click', () => {
+  // hard reset ledger
   ledger.entries = [];
   ledger.head = 'GENESIS';
+  LAST_APPEND_ERROR = null;
   renderLog();
   persistState();
-  await appendEvent({ type:'LOG_RESET', note:'Ledger cleared and chain restarted from GENESIS' });
+
+  // first append after reset (should create entry #0)
+  appendEvent({ type:'LOG_RESET', note:'Ledger cleared and chain restarted from GENESIS' });
   setStatus('LOG CLEARED');
 });
 
@@ -602,15 +629,15 @@ ui.btnCopyLog.addEventListener('click', async () => {
   setStatus('LOG COPIED');
 });
 
-ui.btnRandomObs.addEventListener('click', async () => {
+ui.btnRandomObs.addEventListener('click', () => {
   world.obstacles = randomObstacles(5, Number(ui.seed.value || 1));
-  await appendEvent({ type:'OBSTACLES_RANDOMIZED', count: world.obstacles.length, seed: Number(ui.seed.value || 0) });
+  appendEvent({ type:'OBSTACLES_RANDOMIZED', count: world.obstacles.length, seed: Number(ui.seed.value || 0) });
   setStatus('OBSTACLES RANDOMIZED');
 });
 
-ui.btnClearObs.addEventListener('click', async () => {
+ui.btnClearObs.addEventListener('click', () => {
   world.obstacles = [];
-  await appendEvent({ type:'OBSTACLES_CLEARED' });
+  appendEvent({ type:'OBSTACLES_CLEARED' });
   setStatus('OBSTACLES CLEARED');
 });
 
@@ -625,7 +652,7 @@ ui.seed.addEventListener('change', () => {
 /** boot */
 let last = performance.now();
 
-async function boot(){
+function boot(){
   applyFromURL();
 
   const saved = loadState();
@@ -645,10 +672,12 @@ async function boot(){
     }catch(_e){}
   }
 
+  // If ledger is empty, we want at least BOOT entry as proof-of-life
   applyScenarioPack(ui.scenarioPack.value);
   applyPolicyPack(ui.policyPack.value);
 
-  await appendEvent({ type:'BOOT', note:'Control Core booted (append queue enabled)' });
+  appendEvent({ type:'BOOT', note:'Control Core booted (queue+error visibility enabled)' });
+
   renderLog();
   requestAnimationFrame(loop);
 }
