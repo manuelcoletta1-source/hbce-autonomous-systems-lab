@@ -5,6 +5,13 @@ const canvas = $('sim');
 const ctx = canvas.getContext('2d');
 
 const ui = {
+  // presets
+  policyPack: $('policyPack'),
+  scenarioPack: $('scenarioPack'),
+  btnApplyPolicy: $('btnApplyPolicy'),
+  btnApplyScenario: $('btnApplyScenario'),
+
+  // tuning
   mode: $('mode'),
   speed: $('speed'),
   minDist: $('minDist'),
@@ -14,18 +21,19 @@ const ui = {
   obsBuffer: $('obsBuffer'),
   hardStop: $('hardStop'),
 
+  // status
   status: $('status'),
   policyState: $('policyState'),
-
   tOp: $('tOp'),
   tDr: $('tDr'),
   tDist: $('tDist'),
   tVel: $('tVel'),
   tAct: $('tAct'),
   tViol: $('tViol'),
+  tPack: $('tPack'),
 
+  // log
   log: $('log'),
-
   btnReset: $('btnReset'),
   btnEmit: $('btnEmit'),
   btnClearLog: $('btnClearLog'),
@@ -39,9 +47,7 @@ const len = (x, y) => Math.hypot(x, y);
 const nowISO = () => new Date().toISOString();
 const fmt = (n) => Number.isFinite(n) ? n.toFixed(1) : '—';
 
-function hex(buf){
-  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2,'0')).join('');
-}
+function hex(buf){ return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2,'0')).join(''); }
 async function sha256(str){
   const data = new TextEncoder().encode(str);
   const digest = await crypto.subtle.digest('SHA-256', data);
@@ -54,13 +60,11 @@ const world = {
   op: { x: canvas.width * 0.28, y: canvas.height * 0.56, r: 10 },
   dr: { x: canvas.width * 0.66, y: canvas.height * 0.46, r: 9, vx: 0, vy: 0 },
   ex: { x: canvas.width * 0.70, y: canvas.height * 0.58, dir: 1, t: 0 },
-  obstacles: [
-    { x: 390, y: 120, w: 160, h: 70 },
-    { x: 650, y: 330, w: 190, h: 80 },
-    { x: 220, y: 360, w: 130, h: 70 },
-  ],
+  obstacles: [],
   lastAction: '—',
   lastViolation: '—',
+  activePack: 'HUMAN_PROXIMITY',
+  activeScenario: 'OFFICE',
   mouseInside: false,
 };
 
@@ -85,7 +89,7 @@ function renderLog(){
     proto: ledger.proto,
     policy: ledger.policy,
     head: ledger.head,
-    entries: ledger.entries.slice(-70)
+    entries: ledger.entries.slice(-80)
   }, null, 2);
 }
 
@@ -96,6 +100,75 @@ function setPolicy(pass){
   ui.policyState.classList.add(pass ? 'pill--ok' : 'pill--deny');
 }
 
+/** Presets */
+const POLICY_PACKS = {
+  HUMAN_PROXIMITY: { speed: 2.4, minDist: 90, maxSpeed: 260, noTouch: 24, boundary: 14, obsBuffer: 34, hardStop: 'YES' },
+  WAREHOUSE:       { speed: 3.6, minDist: 70, maxSpeed: 420, noTouch: 16, boundary: 10, obsBuffer: 30, hardStop: 'YES' },
+  INSPECTION:      { speed: 2.0, minDist: 80, maxSpeed: 210, noTouch: 22, boundary: 16, obsBuffer: 38, hardStop: 'YES' },
+  LAB_CLEANROOM:   { speed: 1.8, minDist: 110, maxSpeed: 180, noTouch: 30, boundary: 18, obsBuffer: 44, hardStop: 'YES' },
+};
+
+const SCENARIO_PACKS = {
+  OFFICE: () => [
+    { x: 380, y: 130, w: 160, h: 70 },
+    { x: 640, y: 330, w: 190, h: 80 },
+    { x: 220, y: 360, w: 130, h: 70 },
+  ],
+  WAREHOUSE: () => [
+    { x: 220, y: 120, w: 520, h: 60 },
+    { x: 240, y: 260, w: 500, h: 60 },
+    { x: 260, y: 400, w: 480, h: 60 },
+  ],
+  CORRIDOR: () => [
+    { x: 200, y: 80,  w: 580, h: 60 },
+    { x: 200, y: 420, w: 580, h: 60 },
+    { x: 420, y: 180, w: 140, h: 200 },
+  ],
+  CLUTTERED: () => randomObstacles(7),
+};
+
+function applyPolicyPack(name){
+  const p = POLICY_PACKS[name];
+  if(!p) return;
+  world.activePack = name;
+
+  ui.speed.value = p.speed;
+  ui.minDist.value = p.minDist;
+  ui.maxSpeed.value = p.maxSpeed;
+  ui.noTouch.value = p.noTouch;
+  ui.boundary.value = p.boundary;
+  ui.obsBuffer.value = p.obsBuffer;
+  ui.hardStop.value = p.hardStop;
+
+  ui.tPack.textContent = name;
+  appendEvent({ type:'POLICY_PACK_APPLIED', pack: name, cfg: p });
+  setStatus(`POLICY PACK: ${name}`);
+}
+
+function applyScenarioPack(name){
+  const fn = SCENARIO_PACKS[name];
+  if(!fn) return;
+  world.activeScenario = name;
+  world.obstacles = fn();
+  appendEvent({ type:'SCENARIO_PACK_APPLIED', scenario: name, obstacles: world.obstacles.length });
+  setStatus(`SCENARIO: ${name}`);
+}
+
+function randomObstacles(count = 4){
+  const obs = [];
+  for(let i=0;i<count;i++){
+    const w = 80 + Math.random()*170;
+    const h = 50 + Math.random()*120;
+    obs.push({
+      x: 30 + Math.random()*(world.w - w - 60),
+      y: 30 + Math.random()*(world.h - h - 60),
+      w, h
+    });
+  }
+  return obs;
+}
+
+/** Input */
 canvas.addEventListener('mousemove', (e) => {
   const rect = canvas.getBoundingClientRect();
   const sx = canvas.width / rect.width;
@@ -106,6 +179,7 @@ canvas.addEventListener('mousemove', (e) => {
 });
 canvas.addEventListener('mouseleave', () => { world.mouseInside = false; });
 
+/** Geometry */
 function roundRect(c, x, y, w, h, r){
   const rr = Math.min(r, w/2, h/2);
   c.beginPath();
@@ -119,6 +193,8 @@ function roundRect(c, x, y, w, h, r){
 function pointInRect(px, py, r){
   return px >= r.x && px <= (r.x + r.w) && py >= r.y && py <= (r.y + r.h);
 }
+
+/** Obstacle repulsion (soft) */
 function obstacleRepulsion(px, py, buffer){
   let rx = 0, ry = 0;
   const margin = buffer;
@@ -136,6 +212,8 @@ function obstacleRepulsion(px, py, buffer){
   }
   return { x: rx, y: ry };
 }
+
+/** Explore */
 function stepExplore(dt){
   const ex = world.ex;
   ex.t += dt;
@@ -146,6 +224,7 @@ function stepExplore(dt){
   ex.y = clamp(ex.y, 70, world.h - 70);
 }
 
+/** FAIL-CLOSED policy evaluation */
 function evaluatePolicy(nextX, nextY, vmag, cfg){
   if(nextX < cfg.boundary || nextX > world.w - cfg.boundary || nextY < cfg.boundary || nextY > world.h - cfg.boundary){
     return { pass:false, code:'BOUNDARY_VIOLATION' };
@@ -169,17 +248,22 @@ function evaluatePolicy(nextX, nextY, vmag, cfg){
   return { pass:true, code:'OK' };
 }
 
-function update(dt){
-  const mode = ui.mode.value;
-  const cfg = {
+function readCfg(){
+  return {
     speed: clamp(parseFloat(ui.speed.value || '3.2'), 0.2, 12),
     minDist: clamp(parseFloat(ui.minDist.value || '60'), 10, 240),
     maxSpeed: clamp(parseFloat(ui.maxSpeed.value || '380'), 20, 1200),
-    noTouch: clamp(parseFloat(ui.noTouch.value || '14'), 0, 80),
-    boundary: clamp(parseFloat(ui.boundary.value || '10'), 0, 120),
-    obsBuffer: clamp(parseFloat(ui.obsBuffer.value || '26'), 0, 120),
+    noTouch: clamp(parseFloat(ui.noTouch.value || '14'), 0, 120),
+    boundary: clamp(parseFloat(ui.boundary.value || '10'), 0, 160),
+    obsBuffer: clamp(parseFloat(ui.obsBuffer.value || '26'), 0, 160),
     hardStop: (ui.hardStop.value === 'YES'),
   };
+}
+
+/** Core update */
+function update(dt){
+  const mode = ui.mode.value;
+  const cfg = readCfg();
 
   const dr = world.dr;
   const op = world.op;
@@ -246,7 +330,7 @@ function update(dt){
     if(cfg.hardStop){
       dr.vx = 0; dr.vy = 0;
       if(world.lastAction !== 'DENY'){
-        appendEvent({ type:'POLICY_DENY', code: pol.code, mode, action, operator:{x:op.x,y:op.y}, drone:{x:dr.x,y:dr.y}, cfg });
+        appendEvent({ type:'POLICY_DENY', code: pol.code, mode, action, pack: world.activePack, scenario: world.activeScenario, operator:{x:op.x,y:op.y}, drone:{x:dr.x,y:dr.y}, cfg });
       }
       world.lastAction = 'DENY';
       setStatus(`DENY (${pol.code})`);
@@ -255,7 +339,7 @@ function update(dt){
       dr.x = clamp(nextX, 0, world.w);
       dr.y = clamp(nextY, 0, world.h);
       if(world.lastAction !== 'DENY_LOG_ONLY'){
-        appendEvent({ type:'POLICY_VIOLATION_LOG_ONLY', code: pol.code, mode, action, operator:{x:op.x,y:op.y}, drone_next:{x:dr.x,y:dr.y}, cfg });
+        appendEvent({ type:'POLICY_VIOLATION_LOG_ONLY', code: pol.code, mode, action, pack: world.activePack, scenario: world.activeScenario, operator:{x:op.x,y:op.y}, drone_next:{x:dr.x,y:dr.y}, cfg });
       }
       world.lastAction = 'DENY_LOG_ONLY';
       setStatus(`VIOLATION LOGGED (${pol.code})`);
@@ -276,11 +360,14 @@ function update(dt){
   ui.tVel.textContent = `${fmt(len(dr.vx, dr.vy))} px/s`;
   ui.tAct.textContent = world.lastAction;
   ui.tViol.textContent = world.lastViolation;
+  ui.tPack.textContent = `${world.activePack} / ${world.activeScenario}`;
 }
 
+/** Render */
 function draw(){
   ctx.clearRect(0,0,world.w,world.h);
 
+  // grid
   ctx.save();
   ctx.globalAlpha = 0.22;
   ctx.beginPath();
@@ -290,6 +377,7 @@ function draw(){
   ctx.stroke();
   ctx.restore();
 
+  // obstacles
   for(const o of world.obstacles){
     ctx.save();
     ctx.fillStyle = 'rgba(255,255,255,0.06)';
@@ -300,14 +388,14 @@ function draw(){
     ctx.restore();
   }
 
-  const minDist = clamp(parseFloat(ui.minDist.value || '60'), 10, 240);
-  const noTouch = clamp(parseFloat(ui.noTouch.value || '14'), 0, 80);
+  // rings
+  const cfg = readCfg();
   const op = world.op;
   const dr = world.dr;
 
   ctx.save();
   ctx.beginPath();
-  ctx.arc(op.x, op.y, minDist, 0, Math.PI*2);
+  ctx.arc(op.x, op.y, cfg.minDist, 0, Math.PI*2);
   ctx.setLineDash([8,8]);
   ctx.strokeStyle = 'rgba(124,255,178,0.22)';
   ctx.stroke();
@@ -315,12 +403,13 @@ function draw(){
 
   ctx.save();
   ctx.beginPath();
-  ctx.arc(op.x, op.y, op.r + noTouch, 0, Math.PI*2);
+  ctx.arc(op.x, op.y, op.r + cfg.noTouch, 0, Math.PI*2);
   ctx.setLineDash([6,10]);
   ctx.strokeStyle = 'rgba(255,204,102,0.26)';
   ctx.stroke();
   ctx.restore();
 
+  // link
   ctx.save();
   ctx.beginPath();
   ctx.moveTo(op.x, op.y);
@@ -329,6 +418,7 @@ function draw(){
   ctx.stroke();
   ctx.restore();
 
+  // operator
   ctx.save();
   ctx.beginPath();
   ctx.arc(op.x, op.y, op.r, 0, Math.PI*2);
@@ -338,6 +428,7 @@ function draw(){
   ctx.stroke();
   ctx.restore();
 
+  // drone
   ctx.save();
   ctx.beginPath();
   ctx.arc(dr.x, dr.y, dr.r, 0, Math.PI*2);
@@ -347,6 +438,7 @@ function draw(){
   ctx.stroke();
   ctx.restore();
 
+  // explore marker
   if(ui.mode.value === 'EXPLORE_SAFE'){
     ctx.save();
     ctx.beginPath();
@@ -365,6 +457,7 @@ function draw(){
   }
 }
 
+/** UI actions */
 ui.btnReset.addEventListener('click', async () => {
   world.op.x = world.w * 0.28;
   world.op.y = world.h * 0.56;
@@ -382,18 +475,13 @@ ui.btnReset.addEventListener('click', async () => {
 });
 
 ui.btnEmit.addEventListener('click', async () => {
+  const cfg = readCfg();
   await appendEvent({
     type:'MANUAL_EVENT',
     mode: ui.mode.value,
-    cfg: {
-      speed: Number(ui.speed.value),
-      minDist: Number(ui.minDist.value),
-      maxSpeed: Number(ui.maxSpeed.value),
-      noTouch: Number(ui.noTouch.value),
-      boundary: Number(ui.boundary.value),
-      obsBuffer: Number(ui.obsBuffer.value),
-      hardStop: ui.hardStop.value
-    },
+    pack: world.activePack,
+    scenario: world.activeScenario,
+    cfg,
     operator: { x: world.op.x, y: world.op.y },
     drone: { x: world.dr.x, y: world.dr.y },
     action: world.lastAction,
@@ -416,7 +504,7 @@ ui.btnCopyLog.addEventListener('click', async () => {
 });
 
 ui.btnRandomObs.addEventListener('click', async () => {
-  world.obstacles = randomObstacles(4);
+  world.obstacles = randomObstacles(5);
   await appendEvent({ type:'OBSTACLES_RANDOMIZED', count: world.obstacles.length });
   setStatus('OBSTACLES RANDOMIZED');
 });
@@ -427,26 +515,37 @@ ui.btnClearObs.addEventListener('click', async () => {
   setStatus('OBSTACLES CLEARED');
 });
 
-function randomObstacles(count = 4){
-  const obs = [];
-  for(let i=0;i<count;i++){
-    const w = 90 + Math.random()*160;
-    const h = 55 + Math.random()*110;
-    obs.push({
-      x: 40 + Math.random()*(world.w - w - 80),
-      y: 40 + Math.random()*(world.h - h - 80),
-      w, h
-    });
-  }
-  return obs;
-}
+ui.btnApplyPolicy.addEventListener('click', () => {
+  applyPolicyPack(ui.policyPack.value);
+});
 
+ui.btnApplyScenario.addEventListener('click', () => {
+  applyScenarioPack(ui.scenarioPack.value);
+});
+
+$('btnApplyScenario').addEventListener('click', () => {
+  applyScenarioPack(ui.scenarioPack.value);
+});
+
+$('btnApplyPolicy').addEventListener('click', () => {
+  applyPolicyPack(ui.policyPack.value);
+});
+
+$('btnApplyScenario').addEventListener('click', () => {
+  applyScenarioPack(ui.scenarioPack.value);
+});
+
+/** boot */
 let last = performance.now();
+
 async function boot(){
-  await appendEvent({ type:'BOOT', note:'Control Core booted (FAIL-CLOSED enabled)' });
+  applyScenarioPack('OFFICE');
+  applyPolicyPack('HUMAN_PROXIMITY');
+  await appendEvent({ type:'BOOT', note:'Control Core booted (Policy Packs enabled)' });
   renderLog();
   requestAnimationFrame(loop);
 }
+
 function loop(){
   const t = performance.now();
   const dt = clamp((t - last) / 1000, 0, 0.05);
@@ -455,4 +554,5 @@ function loop(){
   draw();
   requestAnimationFrame(loop);
 }
+
 boot();
