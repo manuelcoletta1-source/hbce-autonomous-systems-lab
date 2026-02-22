@@ -1,47 +1,151 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>HBCE Control Core — Autonomous Systems Lab</title>
-<link rel="stylesheet" href="style.css">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>HBCE Control Core — FAIL-CLOSED Policy Simulator</title>
+  <meta name="description" content="Universal machine behavior core. FAIL-CLOSED constraints, safety policy, obstacle avoidance, append-only hash-chained audit log." />
+  <link rel="stylesheet" href="./style.css" />
 </head>
 
 <body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand__kicker">HBCE • Autonomous Systems Lab</div>
+      <div class="brand__title">Control Core</div>
+      <div class="brand__sub">FAIL-CLOSED safety policy • audit-first • hardware-independent</div>
+    </div>
 
-<header class="top">
-<h1>HBCE Control Core</h1>
-<p>Universal machine behavior layer — simulation environment</p>
-</header>
+    <div class="statusbar">
+      <div class="pill" id="status">STATUS: READY</div>
+      <div class="pill pill--ghost" id="policyState">POLICY: PASS</div>
+    </div>
+  </header>
 
-<section class="panel">
+  <main class="layout">
+    <section class="stage">
+      <div class="stage__head">
+        <div class="hint">
+          <b>Mouse</b> moves <b>Operator Target</b>. The drone executes decisions only if policy passes.  
+          Violations are blocked and logged (FAIL-CLOSED).
+        </div>
 
-<div class="controls">
-<label>MODE</label>
-<select id="mode">
-<option value="follow">FOLLOW</option>
-<option value="hover">HOVER</option>
-<option value="explore">EXPLORE_SAFE</option>
-</select>
+        <div class="quick">
+          <button class="btn" id="btnReset">Reset</button>
+          <button class="btn btn--ghost" id="btnEmit">Emit Event</button>
+          <button class="btn btn--ghost" id="btnRandomObs">Random Obstacles</button>
+          <button class="btn btn--ghost" id="btnClearObs">Clear Obstacles</button>
+        </div>
+      </div>
 
-<label>Distance</label>
-<input type="range" id="dist" min="20" max="200" value="60">
+      <canvas id="sim" width="980" height="560"></canvas>
 
-<label>Speed</label>
-<input type="range" id="speed" min="1" max="10" value="3">
+      <div class="stage__foot">
+        <div class="legend">
+          <span class="dot dot--op"></span> Operator Target
+          <span class="dot dot--dr"></span> Drone Body
+          <span class="dot dot--safe"></span> Safe Ring
+          <span class="dot dot--deny"></span> Deny Zone
+          <span class="dot dot--obs"></span> Obstacles
+        </div>
+      </div>
+    </section>
 
-<button onclick="emitEvent()">Emit log event</button>
-</div>
+    <aside class="panel">
+      <div class="card">
+        <h2>Modes</h2>
 
-<canvas id="sim" width="900" height="520"></canvas>
+        <div class="grid2">
+          <label class="ctrl">
+            <span>MODE</span>
+            <select id="mode">
+              <option value="FOLLOW" selected>FOLLOW</option>
+              <option value="HOVER">HOVER</option>
+              <option value="EXPLORE_SAFE">EXPLORE_SAFE</option>
+            </select>
+          </label>
 
-</section>
+          <label class="ctrl">
+            <span>SPEED</span>
+            <input id="speed" type="number" min="0.2" max="12" step="0.1" value="3.2" />
+          </label>
 
-<section class="log">
-<h3>Append-only log</h3>
-<pre id="log"></pre>
-</section>
+          <label class="ctrl">
+            <span>MIN DIST (px)</span>
+            <input id="minDist" type="number" min="10" max="240" step="1" value="60" />
+          </label>
 
-<script src="core.js"></script>
+          <label class="ctrl">
+            <span>MAX SPEED (px/s)</span>
+            <input id="maxSpeed" type="number" min="20" max="1200" step="5" value="380" />
+          </label>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>FAIL-CLOSED Safety Policy</h2>
+        <p class="muted">
+          Any violation blocks motion commands (<b>DENY</b>) and writes an audit entry.
+          Policy is evaluated every tick.
+        </p>
+
+        <div class="grid2">
+          <label class="ctrl">
+            <span>NO-TOUCH MARGIN (px)</span>
+            <input id="noTouch" type="number" min="0" max="80" step="1" value="14" />
+          </label>
+
+          <label class="ctrl">
+            <span>BOUNDARY MARGIN (px)</span>
+            <input id="boundary" type="number" min="0" max="120" step="1" value="10" />
+          </label>
+
+          <label class="ctrl">
+            <span>OBSTACLE BUFFER (px)</span>
+            <input id="obsBuffer" type="number" min="0" max="120" step="1" value="26" />
+          </label>
+
+          <label class="ctrl">
+            <span>HARD STOP ON VIOLATION</span>
+            <select id="hardStop">
+              <option value="YES" selected>YES</option>
+              <option value="NO">NO (log only)</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="policybox">
+          <div class="kv">
+            <div class="k">Operator</div><div class="v" id="tOp">—</div>
+            <div class="k">Drone</div><div class="v" id="tDr">—</div>
+            <div class="k">Distance</div><div class="v" id="tDist">—</div>
+            <div class="k">Velocity</div><div class="v" id="tVel">—</div>
+            <div class="k">Last Action</div><div class="v" id="tAct">—</div>
+            <div class="k">Last Violation</div><div class="v" id="tViol">—</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Append-only Audit Log (hash chain)</h2>
+        <p class="muted">
+          Each entry: <code>prev_hash → hash</code>. Traces are append-only. This is the basis for audit-first robotics.
+        </p>
+
+        <div class="logbar">
+          <button class="btn btn--danger" id="btnClearLog">Clear Log</button>
+          <button class="btn btn--ghost" id="btnCopyLog">Copy JSON</button>
+        </div>
+
+        <pre class="log" id="log"></pre>
+      </div>
+    </aside>
+  </main>
+
+  <footer class="footer">
+    <div class="muted">Static simulator • No backend • FAIL-CLOSED policy gate • Designed for industrial demos</div>
+  </footer>
+
+  <script src="./core.js"></script>
 </body>
 </html>
