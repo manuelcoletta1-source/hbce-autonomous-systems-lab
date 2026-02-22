@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>HBCE Evidence Pack — Control Core</title>
+  <meta name="description" content="Evidence Pack export for HBCE Control Core: self-contained audit object with hash-chained ledger and configuration." />
+  <link rel="stylesheet" href="./style.css" />
+</head>
+
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand__kicker">HBCE • Autonomous Systems Lab</div>
+      <div class="brand__title">Evidence Pack</div>
+      <div class="brand__sub">Export a self-contained audit object (pack + scenario + seed + ledger)</div>
+    </div>
+
+    <div class="statusbar">
+      <a class="btn btn--ghost" href="./">Back to Control Core</a>
+      <button class="btn" id="btnBuild">Build Pack</button>
+      <button class="btn btn--ghost" id="btnCopy">Copy JSON</button>
+      <button class="btn btn--ghost" id="btnDownload">Download .json</button>
+    </div>
+  </header>
+
+  <main class="layout" style="grid-template-columns:1fr;">
+    <section class="stage">
+      <div class="stage__head">
+        <div class="hint">
+          This pack is <b>append-only</b> at the UI layer: it exports what was produced by the simulator.
+          It includes <b>hash-chained ledger</b> and <b>replay parameters</b> (policy/scenario/seed).
+        </div>
+      </div>
+
+      <pre class="log" id="out" style="height:520px;"></pre>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="muted">No backend. All data comes from localStorage state emitted by the simulator.</div>
+  </footer>
+
+  <script src="./evidence-pack.js"></script>
+</body>
+</html>
