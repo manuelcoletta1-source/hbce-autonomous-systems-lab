@@ -1,0 +1,73 @@
+{
+  "proto": "HBCE-EVIDENCE-PACK-v1",
+  "kind": "CONTROL_CORE_SIM_EVIDENCE",
+  "ts": "2026-02-22T20:46:20.766Z",
+  "replay": {
+    "policy_pack": "HUMAN_PROXIMITY",
+    "scenario_pack": "OFFICE",
+    "seed": 20260281,
+    "cfg": {
+      "speed": 2.1,
+      "minDist": 90,
+      "maxSpeed": 260,
+      "noTouch": 24,
+      "boundary": 14,
+      "obsBuffer": 34,
+      "hardStop": true
+    }
+  },
+  "environment": {
+    "obstacles": [
+      { "x": 380, "y": 130, "w": 160, "h": 70 },
+      { "x": 640, "y": 330, "w": 190, "h": 80 },
+      { "x": 220, "y": 360, "w": 130, "h": 70 }
+    ]
+  },
+  "ledger": {
+    "proto": "HBCE-SIM-AUDIT-LOG-v1",
+    "policy": ["APPEND_ONLY", "HASH_CHAIN", "AUDIT_FIRST", "FAIL_CLOSED"],
+    "entries": [
+      {
+        "ts": "2026-02-22T20:29:12.369Z",
+        "type": "LOG_RESET",
+        "note": "Ledger cleared and chain restarted from GENESIS",
+        "prev_hash": "GENESIS",
+        "hash": "dce3ead095702438c1afae05413c54bc0dcc22d6047607bf4533134082b5edce"
+      }
+    ],
+    "head": "dce3ead095702438c1afae05413c54bc0dcc22d6047607bf4533134082b5edce"
+  },
+  "attachments": [
+    {
+      "kind": "JOKER_BINDING",
+      "receipt_hash": "da84ef00f4336f8531c5ae03523808e1729487627c3844dc36e7fa4e8d6180c8",
+      "binding": {
+        "operator_id": "Manuel Coletta IPR-Biologico",
+        "ai_id": "Joker-C2 IPR-AI-Cibernetico",
+        "policy_pack": "HUMAN_PROXIMITY",
+        "scenario_pack": "OFFICE",
+        "seed": 20260281,
+        "scope": "Joker-C2 decision layer bound to Control Core simulation context."
+      },
+      "receipt": {
+        "proto": "HBCE-BINDING-RECEIPT-v1",
+        "kind": "JOKER_C2_BINDING",
+        "ts": "2026-02-22T20:37:50.791Z",
+        "binding": {
+          "operator_id": "Manuel Coletta IPR-Biologico",
+          "ai_id": "Joker-C2 IPR-AI-Cibernetico",
+          "policy_pack": "HUMAN_PROXIMITY",
+          "scenario_pack": "OFFICE",
+          "seed": 20260281,
+          "scope": "Joker-C2 decision layer bound to Control Core simulation context."
+        },
+        "policy": ["HASH_ONLY", "APPEND_ONLY", "AUDIT_FIRST", "FAIL_CLOSED"],
+        "prev_head": "dfe2d654dbee0a3b7b893d8be6c9f1554e374cd86527b9062dec8ddcf2113906",
+        "receipt_hash": "da84ef00f4336f8531c5ae03523808e1729487627c3844dc36e7fa4e8d6180c8"
+      },
+      "ts": "2026-02-22T20:51:36.646Z"
+    }
+  ],
+  "pack_hash": "1aabf59482f92a8b56eeee4eea6ddb3f32cb759a4e12635051e32e092db9f5f2",
+  "signature": { "algo": "NONE", "note": "Modified after merge" }
+}
