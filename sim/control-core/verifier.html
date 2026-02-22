@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>HBCE Verifier — Evidence Pack</title>
-  <meta name="description" content="Verifier for HBCE Evidence Pack: pack hash check + ledger hash-chain verification + replay parameters extraction." />
+  <meta name="description" content="Verifier for HBCE Evidence Pack: pack hash check + ledger hash-chain verification + replay parameters + optional signature verification." />
   <link rel="stylesheet" href="./style.css" />
 </head>
 
@@ -13,7 +13,7 @@
     <div class="brand">
       <div class="brand__kicker">HBCE • Autonomous Systems Lab</div>
       <div class="brand__title">Verifier</div>
-      <div class="brand__sub">Evidence Pack validation • hash integrity • ledger chain verification</div>
+      <div class="brand__sub">Evidence Pack validation • hash integrity • ledger chain • optional signature</div>
     </div>
 
     <div class="statusbar">
@@ -30,7 +30,8 @@
           Paste an <b>HBCE Evidence Pack JSON</b> here. The verifier will:
           <b>(1)</b> recompute <code>pack_hash</code>,
           <b>(2)</b> verify the ledger hash chain,
-          <b>(3)</b> extract replay parameters.
+          <b>(3)</b> extract replay parameters,
+          <b>(4)</b> verify optional <code>signature</code>.
         </div>
       </div>
 
@@ -82,6 +83,7 @@
     <div class="muted">Static verification • No backend • Deterministic hashing (SHA-256 via WebCrypto)</div>
   </footer>
 
+  <script src="./crypto.js"></script>
   <script src="./verifier.js"></script>
 </body>
 </html>
