@@ -90,6 +90,7 @@ const ledger = {
 
 const STORAGE_KEY = 'HBCE_CONTROL_CORE_STATE_V1';
 
+// ---- persistence ----
 function persistState(){
   const state = {
     ts: nowISO(),
@@ -117,16 +118,7 @@ function loadState(){
   }
 }
 
-async function appendEvent(event){
-  const prev = ledger.head;
-  const payload = { ts: nowISO(), ...event, prev_hash: prev };
-  const h = await sha256(JSON.stringify(payload));
-  ledger.entries.push({ ...payload, hash: h });
-  ledger.head = h;
-  renderLog();
-  persistState();
-}
-
+// ---- UI helpers ----
 function renderLog(){
   ui.log.textContent = JSON.stringify({
     proto: ledger.proto,
@@ -135,12 +127,30 @@ function renderLog(){
     entries: ledger.entries.slice(-80)
   }, null, 2);
 }
-
 function setStatus(text){ ui.status.textContent = `STATUS: ${text}`; }
 function setPolicy(pass){
   ui.policyState.textContent = `POLICY: ${pass ? 'PASS' : 'DENY'}`;
   ui.policyState.classList.remove('pill--ok','pill--deny');
   ui.policyState.classList.add(pass ? 'pill--ok' : 'pill--deny');
+}
+
+// ---- CRITICAL FIX: append queue (prevents hash-chain fork) ----
+let APPEND_QUEUE = Promise.resolve();
+
+function appendEvent(event){
+  APPEND_QUEUE = APPEND_QUEUE.then(async () => {
+    const prev = ledger.head;
+    const payload = { ts: nowISO(), ...event, prev_hash: prev };
+    const h = await sha256(JSON.stringify(payload));
+    ledger.entries.push({ ...payload, hash: h });
+    ledger.head = h;
+    renderLog();
+    persistState();
+  }).catch((_e) => {
+    // fail-closed for audit: we do not mutate state on error
+  });
+
+  return APPEND_QUEUE;
 }
 
 /** Presets */
@@ -576,11 +586,13 @@ ui.btnEmit.addEventListener('click', async () => {
   setStatus('EVENT EMITTED');
 });
 
-ui.btnClearLog.addEventListener('click', () => {
+ui.btnClearLog.addEventListener('click', async () => {
+  // IMPORTANT: to guarantee chain integrity, clear also resets head and entries atomically
   ledger.entries = [];
   ledger.head = 'GENESIS';
   renderLog();
   persistState();
+  await appendEvent({ type:'LOG_RESET', note:'Ledger cleared and chain restarted from GENESIS' });
   setStatus('LOG CLEARED');
 });
 
@@ -618,16 +630,17 @@ async function boot(){
 
   const saved = loadState();
   if(saved && !location.search){
-    // restore last local state only if no share params are present
     try{
       ui.seed.value = String(saved.seed ?? ui.seed.value);
       if(saved.activePack && POLICY_PACKS[saved.activePack]) ui.policyPack.value = saved.activePack;
       if(saved.activeScenario && SCENARIO_PACKS[saved.activeScenario]) ui.scenarioPack.value = saved.activeScenario;
 
-      // restore ledger
       if(saved.ledger && Array.isArray(saved.ledger.entries)){
         ledger.entries = saved.ledger.entries;
         ledger.head = saved.ledger.head || 'GENESIS';
+      }
+      if(Array.isArray(saved.obstacles)){
+        world.obstacles = saved.obstacles;
       }
     }catch(_e){}
   }
@@ -635,7 +648,7 @@ async function boot(){
   applyScenarioPack(ui.scenarioPack.value);
   applyPolicyPack(ui.policyPack.value);
 
-  await appendEvent({ type:'BOOT', note:'Control Core booted (Evidence + Share enabled)' });
+  await appendEvent({ type:'BOOT', note:'Control Core booted (append queue enabled)' });
   renderLog();
   requestAnimationFrame(loop);
 }
