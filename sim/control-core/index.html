@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HBCE Control Core — Autonomous Systems Lab</title>
+<link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+<header class="top">
+<h1>HBCE Control Core</h1>
+<p>Universal machine behavior layer — simulation environment</p>
+</header>
+
+<section class="panel">
+
+<div class="controls">
+<label>MODE</label>
+<select id="mode">
+<option value="follow">FOLLOW</option>
+<option value="hover">HOVER</option>
+<option value="explore">EXPLORE_SAFE</option>
+</select>
+
+<label>Distance</label>
+<input type="range" id="dist" min="20" max="200" value="60">
+
+<label>Speed</label>
+<input type="range" id="speed" min="1" max="10" value="3">
+
+<button onclick="emitEvent()">Emit log event</button>
+</div>
+
+<canvas id="sim" width="900" height="520"></canvas>
+
+</section>
+
+<section class="log">
+<h3>Append-only log</h3>
+<pre id="log"></pre>
+</section>
+
+<script src="core.js"></script>
+</body>
+</html>
