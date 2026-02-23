@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>HBCE • Binding Console</title>
+  <meta name="theme-color" content="#0b0f14" />
+  <style>
+    :root{ color-scheme: dark; }
+    body{ background:#0b0f14; color:#e6edf3; font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; margin:0; padding:18px; }
+    .wrap{ max-width:1100px; margin:auto; }
+    .top{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; justify-content:space-between; margin-bottom:12px; }
+    .k{ font-size:12px; opacity:.8; letter-spacing:.08em; text-transform:uppercase; }
+    .t{ font-size:20px; font-weight:800; margin-top:4px; }
+    .muted{ opacity:.78; font-size:12px; }
+    .box{ border:1px solid #2b3137; border-radius:14px; padding:14px; margin-bottom:12px; background:#11161c; }
+    .grid{ display:grid; grid-template-columns: 1fr 1fr; gap:10px; }
+    @media(max-width:900px){ .grid{ grid-template-columns: 1fr; } }
+    label{ font-size:12px; opacity:.85; display:block; margin-bottom:6px; }
+    input,textarea,select{
+      width:100%; border-radius:10px;
+      background:#0d1117; border:1px solid #30363d; color:#e6edf3;
+      padding:10px; font-size:13px;
+    }
+    textarea{ min-height:120px; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:12.5px; line-height:1.35; }
+    button,a.btn{
+      display:inline-flex; align-items:center; justify-content:center;
+      padding:11px 14px; border-radius:10px;
+      border:1px solid #444; background:#161b22; color:#fff;
+      cursor:pointer; text-decoration:none; user-select:none;
+      -webkit-tap-highlight-color:transparent;
+    }
+    button:hover,a.btn:hover{ background:#1f2630; }
+    .btns{ display:flex; gap:10px; flex-wrap:wrap; }
+    pre{
+      background:#0d1117; border:1px solid #30363d;
+      padding:10px; border-radius:10px;
+      overflow:auto; margin:0; font-size:12px; line-height:1.35;
+      font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    }
+    .ok{ color:#3fb950; font-weight:800; }
+    .bad{ color:#ff6b6b; font-weight:800; }
+    code{ background:#0d1117; border:1px solid #30363d; padding:1px 6px; border-radius:8px; }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div>
+      <div class="k">HBCE • Autonomous Systems Lab</div>
+      <div class="t">Binding Console</div>
+      <div class="muted">Creates a deterministic <code>HBCE-BINDING-RECEIPT-v1</code> and its <code>receipt_hash</code> (stable-sorted-keys).</div>
+    </div>
+    <div class="btns">
+      <a class="btn" href="./">Back to Control Core</a>
+      <a class="btn" href="./evidence-pack.html">Open Evidence Pack</a>
+      <a class="btn" href="./pack-bridge.html">Open Pack Bridge</a>
+      <a class="btn" href="./verifier.html">Open Verifier</a>
+    </div>
+  </div>
+
+  <div class="box">
+    <div class="grid">
+      <div>
+        <label for="operator_id">Operator ID (human / org)</label>
+        <input id="operator_id" value="Manuel Coletta IPR-Biologico" />
+      </div>
+      <div>
+        <label for="ai_id">Joker / AI ID</label>
+        <input id="ai_id" value="Joker-C2 IPR-AI-Cibernetico" />
+      </div>
+      <div>
+        <label for="policy_pack">Policy Pack</label>
+        <input id="policy_pack" value="HUMAN_PROXIMITY" />
+      </div>
+      <div>
+        <label for="scenario_pack">Scenario Pack</label>
+        <input id="scenario_pack" value="OFFICE" />
+      </div>
+      <div>
+        <label for="seed">Seed (deterministic replay)</label>
+        <input id="seed" inputmode="numeric" value="20260281" />
+      </div>
+      <div>
+        <label for="ts">Timestamp</label>
+        <input id="ts" />
+      </div>
+    </div>
+
+    <div style="margin-top:10px;">
+      <label for="scope">Scope Note</label>
+      <textarea id="scope">Joker-C2 decision layer bound to Control Core simulation context.</textarea>
+    </div>
+
+    <div class="btns" style="margin-top:10px;">
+      <button id="btnCreate" type="button">Create Receipt</button>
+      <button id="btnCopy" type="button">Copy Receipt JSON</button>
+      <button id="btnClear" type="button">Clear</button>
+    </div>
+
+    <div class="muted" style="margin-top:10px;">
+      Saved as “last receipt” in localStorage for easy reuse in Pack Bridge.
+    </div>
+  </div>
+
+  <div class="box">
+    <div id="status">—</div>
+  </div>
+
+  <div class="box">
+    <h3 style="margin:0 0 8px 0;">Latest Receipt JSON</h3>
+    <pre id="out">{}</pre>
+  </div>
+</div>
+
+<script src="./binding-console.js"></script>
+</body>
+</html>
