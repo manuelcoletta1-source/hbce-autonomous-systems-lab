@@ -1,152 +1,92 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>HBCE • Evidence Verifier</title>
-<meta name="theme-color" content="#0b0f14">
-
-<style>
-body{background:#0b0f14;color:#e6edf3;font-family:system-ui;margin:0;padding:20px}
-.wrap{max-width:1100px;margin:auto}
-.box{border:1px solid #2b3137;border-radius:12px;padding:14px;margin-bottom:14px;background:#11161c}
-textarea{width:100%;min-height:240px;background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:8px;padding:10px;font-family:monospace}
-button{padding:10px 14px;border-radius:8px;border:1px solid #444;background:#161b22;color:white;cursor:pointer}
-button:hover{background:#1f2630}
-pre{background:#0d1117;padding:12px;border-radius:8px;overflow:auto}
-.ok{color:#3fb950}
-.bad{color:#ff6b6b}
-</style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>HBCE Verifier — Evidence Pack</title>
+  <meta name="description" content="Verifier for HBCE Evidence Pack: pack hash check + ledger hash-chain verification + replay parameters + optional signature verification." />
+  <meta name="theme-color" content="#0b0f14" />
+  <link rel="stylesheet" href="./style.css" />
 </head>
 
 <body>
-<div class="wrap">
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand__kicker">HBCE • Autonomous Systems Lab</div>
+      <div class="brand__title">Verifier</div>
+      <div class="brand__sub">Evidence Pack validation • hash integrity • ledger chain • optional signature</div>
+    </div>
 
-<h2>HBCE • Autonomous Systems Lab</h2>
-<h3>Evidence Pack Verifier</h3>
-<p>Hash integrity • ledger chain • deterministic verification</p>
+    <div class="statusbar">
+      <a class="btn btn--ghost" href="./">Back to Control Core</a>
+      <a class="btn btn--ghost" href="./evidence-pack.html">Open Evidence Pack</a>
+      <button class="btn" id="btnVerify" type="button">Verify</button>
+    </div>
+  </header>
 
-<div class="box">
-<textarea id="input" placeholder="Paste HBCE Evidence Pack JSON"></textarea>
-</div>
+  <main class="layout" style="grid-template-columns: 1fr 1fr;">
+    <section class="stage">
+      <div class="stage__head">
+        <div class="hint">
+          Paste an <b>HBCE Evidence Pack JSON</b> here. The verifier will:
+          <b>(1)</b> recompute <code>pack_hash</code>,
+          <b>(2)</b> verify the ledger hash chain,
+          <b>(3)</b> extract replay parameters,
+          <b>(4)</b> verify optional <code>signature</code>.
+          <br><br>
+          <b>Canonical:</b> <code>stable_sorted_keys</code> for pack hashing (ledger remains JSON.stringify).
+        </div>
+      </div>
 
-<div class="box">
-<button onclick="verifyPack()">VERIFY</button>
-<button onclick="clearAll()">CLEAR</button>
-</div>
+      <textarea id="input" class="textarea" spellcheck="false" placeholder="Paste Evidence Pack JSON here..."></textarea>
 
-<div class="box">
-<h3>Result</h3>
-<div>Status: <span id="status">—</span></div>
-<div>Pack Hash: <span id="ph">—</span></div>
-<div>Recomputed: <span id="rc">—</span></div>
-<div>Ledger: <span id="lg">—</span></div>
-<div>Entries: <span id="en">—</span></div>
-</div>
+      <div class="logbar" style="margin-top:10px;">
+        <button class="btn btn--ghost" id="btnLoadFromLocal" type="button">Load from localStorage</button>
+        <button class="btn btn--danger" id="btnClear" type="button">Clear</button>
+      </div>
+    </section>
 
-<div class="box">
-<h3>Diagnostics</h3>
-<pre id="diag"></pre>
-</div>
+    <aside class="panel">
+      <div class="card">
+        <h2>Result</h2>
+        <div class="kv" style="grid-template-columns: 170px 1fr;">
+          <div class="k">Status</div><div class="v" id="rStatus">—</div>
+          <div class="k">Pack Hash</div><div class="v" id="rPackHash">—</div>
+          <div class="k">Recomputed</div><div class="v" id="rRecomputed">—</div>
+          <div class="k">Ledger Chain</div><div class="v" id="rLedger">—</div>
+          <div class="k">Entries</div><div class="v" id="rEntries">—</div>
+        </div>
+      </div>
 
-</div>
+      <div class="card">
+        <h2>Replay Parameters</h2>
+        <div class="kv" style="grid-template-columns: 170px 1fr;">
+          <div class="k">Policy Pack</div><div class="v" id="rPolicy">—</div>
+          <div class="k">Scenario Pack</div><div class="v" id="rScenario">—</div>
+          <div class="k">Seed</div><div class="v" id="rSeed">—</div>
+        </div>
 
-<script>
-function stable(obj){
- if(obj===null||typeof obj!=="object") return JSON.stringify(obj);
- if(Array.isArray(obj)) return "["+obj.map(stable).join(",")+"]";
- return "{"+Object.keys(obj).sort()
-   .map(k=>JSON.stringify(k)+":"+stable(obj[k]))
-   .join(",")+"}";
-}
+        <div class="logbar" style="margin-top:10px;">
+          <button class="btn btn--ghost" id="btnCopyReplayLink" type="button">Copy Replay Link</button>
+        </div>
 
-function hex(buffer){
- return [...new Uint8Array(buffer)]
-  .map(b=>b.toString(16).padStart(2,"0"))
-  .join("");
-}
+        <p class="muted" style="margin-top:10px;">
+          Replay link opens Control Core with <code>?p=PACK&amp;s=SCENARIO&amp;seed=N</code>.
+        </p>
+      </div>
 
-async function sha256(str){
- const data=new TextEncoder().encode(str);
- const digest=await crypto.subtle.digest("SHA-256",data);
- return hex(digest);
-}
+      <div class="card">
+        <h2>Diagnostics</h2>
+        <pre class="log" id="diag" style="height:240px;"></pre>
+      </div>
+    </aside>
+  </main>
 
-function set(id,v){document.getElementById(id).textContent=v;}
-function diag(o){document.getElementById("diag").textContent=JSON.stringify(o,null,2);}
+  <footer class="footer">
+    <div class="muted">Static verification • No backend • Deterministic hashing (SHA-256 via WebCrypto)</div>
+  </footer>
 
-async function verifyLedger(ledger){
- if(!ledger||!Array.isArray(ledger.entries))
-   return {ok:false,reason:"NO_LEDGER"};
-
- let prev="GENESIS";
-
- for(let i=0;i<ledger.entries.length;i++){
-   const e=ledger.entries[i];
-   const {hash,...payload}=e;
-
-   if(payload.prev_hash!==prev)
-     return {ok:false,reason:"CHAIN_BREAK_"+i};
-
-   const h=await sha256(JSON.stringify(payload));
-
-   if(h!==hash)
-     return {ok:false,reason:"HASH_FAIL_"+i};
-
-   prev=hash;
- }
-
- return {ok:true,entries:ledger.entries.length};
-}
-
-async function verifyPack(){
- try{
-   const raw=document.getElementById("input").value.trim();
-   if(!raw){ set("status","EMPTY"); return; }
-
-   const pack=JSON.parse(raw);
-
-   if(pack.proto!=="HBCE-EVIDENCE-PACK-v1"){
-     set("status","INVALID");
-     return diag({error:"Not HBCE pack"});
-   }
-
-   const original=pack.pack_hash;
-
-   const clone=JSON.parse(JSON.stringify(pack));
-   delete clone.pack_hash;
-   delete clone.signature;
-
-   const recomputed=await sha256(stable(clone));
-
-   const ledger=await verifyLedger(pack.ledger);
-
-   const valid=(original===recomputed)&&ledger.ok;
-
-   set("status", valid?"VALID":"INVALID");
-   set("ph", original||"—");
-   set("rc", recomputed||"—");
-   set("lg", ledger.ok?"OK":"BROKEN");
-   set("en", ledger.entries||"—");
-
-   diag({
-     pack_hash_match: original===recomputed,
-     ledger_ok: ledger.ok,
-     canonical:"stable_sorted_keys",
-     hash:"SHA256",
-     engine:"HBCE verifier v3"
-   });
-
- }catch(e){
-   set("status","INVALID JSON");
-   diag({error:String(e)});
- }
-}
-
-function clearAll(){
- document.getElementById("input").value="";
- diag({cleared:true});
-}
-</script>
+  <script src="./crypto.js"></script>
+  <script src="./verifier.js"></script>
 </body>
 </html>
