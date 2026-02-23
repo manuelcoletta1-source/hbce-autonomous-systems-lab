@@ -16,6 +16,8 @@ button:hover{background:#1f2630}
 pre{background:#0d1117;padding:12px;border-radius:8px;overflow:auto}
 .ok{color:#3fb950}
 .bad{color:#ff6b6b}
+.row{display:flex;gap:10px;flex-wrap:wrap}
+.muted{opacity:.8}
 </style>
 </head>
 
@@ -23,22 +25,32 @@ pre{background:#0d1117;padding:12px;border-radius:8px;overflow:auto}
 <div class="wrap">
 
 <h2>HBCE Evidence + Binding Bridge</h2>
-<p>Merge binding receipt inside evidence pack and regenerate pack_hash.</p>
+<p class="muted">
+Merge a <b>Binding Receipt</b> inside an <b>Evidence Pack</b> and regenerate <code>pack_hash</code>.
+<br>
+<b>Canonical rule:</b> pack_hash is SHA-256 of <code>JSON.stringify(payload)</code> where payload = pack without <code>pack_hash</code> and without <code>signature</code>.
+</p>
 
 <div class="box">
-<h3>1. Evidence Pack JSON</h3>
-<textarea id="pack"></textarea>
+<h3>1) Evidence Pack JSON</h3>
+<textarea id="pack" spellcheck="false" placeholder="Paste HBCE Evidence Pack JSON here..."></textarea>
 </div>
 
 <div class="box">
-<h3>2. Binding Receipt JSON</h3>
-<textarea id="receipt"></textarea>
+<h3>2) Binding Receipt JSON (optional)</h3>
+<textarea id="receipt" spellcheck="false" placeholder="Paste HBCE Binding Receipt JSON here (optional)..."></textarea>
+<p class="muted" style="margin:8px 0 0 0">
+If you leave receipt empty, Bridge will simply recompute <code>pack_hash</code> for the pack you pasted.
+</p>
 </div>
 
 <div class="box">
-<button onclick="validate()">Validate</button>
-<button onclick="merge()">Merge → New Pack</button>
-<button onclick="copyOut()">Copy</button>
+<div class="row">
+  <button type="button" id="btnValidate">Validate</button>
+  <button type="button" id="btnMerge">Merge → New Pack</button>
+  <button type="button" id="btnCopy">Copy</button>
+  <button type="button" id="btnClear">Clear</button>
+</div>
 </div>
 
 <div class="box">
@@ -54,91 +66,115 @@ pre{background:#0d1117;padding:12px;border-radius:8px;overflow:auto}
 </div>
 
 <script>
-let validated=false;
-let mergedPack=null;
+'use strict';
 
-function stable(obj){
-  if(obj===null||typeof obj!=="object")return JSON.stringify(obj);
-  if(Array.isArray(obj))return "["+obj.map(stable).join(",")+"]";
-  return "{"+Object.keys(obj).sort().map(k=>JSON.stringify(k)+":"+stable(obj[k])).join(",")+"}";
+let validated = false;
+let mergedPack = null;
+
+function setStatus(txt, ok=true){
+  document.getElementById("status").innerHTML =
+    ok ? `<span class="ok">${txt}</span>` : `<span class="bad">${txt}</span>`;
+}
+
+function safeParse(raw){
+  try{ return JSON.parse(raw); }catch(_e){ return null; }
+}
+
+function hex(buf){
+  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2,'0')).join('');
 }
 
 async function sha256(str){
- const buf=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(str));
- return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,"0")).join("");
-}
-
-function setStatus(txt,ok=true){
- document.getElementById("status").innerHTML=
- ok?`<span class="ok">${txt}</span>`:`<span class="bad">${txt}</span>`;
+  const data = new TextEncoder().encode(str);
+  const digest = await crypto.subtle.digest('SHA-256', data);
+  return hex(digest);
 }
 
 async function validate(){
- try{
-  const pack=JSON.parse(document.getElementById("pack").value);
-  const receipt=JSON.parse(document.getElementById("receipt").value);
+  const packRaw = document.getElementById("pack").value.trim();
+  const receiptRaw = document.getElementById("receipt").value.trim();
 
-  if(pack.proto!=="HBCE-EVIDENCE-PACK-v1")
-    return setStatus("Wrong evidence pack proto",false);
+  const pack = safeParse(packRaw);
+  if(!pack) return setStatus("Invalid Evidence Pack JSON", false);
+  if(pack.proto !== "HBCE-EVIDENCE-PACK-v1") return setStatus("Wrong evidence pack proto", false);
 
-  if(receipt.proto!=="HBCE-BINDING-RECEIPT-v1")
-    return setStatus("Wrong receipt proto",false);
+  // Receipt is optional; if present, validate it.
+  if(receiptRaw){
+    const receipt = safeParse(receiptRaw);
+    if(!receipt) return setStatus("Invalid Receipt JSON", false);
+    if(receipt.proto !== "HBCE-BINDING-RECEIPT-v1") return setStatus("Wrong receipt proto", false);
 
-  const r=JSON.parse(JSON.stringify(receipt));
-  const rh=r.receipt_hash;
-  delete r.receipt_hash;
+    // Verify receipt hash (canonical = JSON.stringify without receipt_hash)
+    const r = JSON.parse(JSON.stringify(receipt));
+    const rh = r.receipt_hash;
+    delete r.receipt_hash;
 
-  const recomputed=await sha256(stable(r));
-  if(recomputed!==rh)
-    return setStatus("Receipt hash mismatch",false);
+    const recomputed = await sha256(JSON.stringify(r));
+    if(recomputed !== rh) return setStatus("Receipt hash mismatch", false);
+  }
 
+  validated = true;
   setStatus("VALIDATED");
-  validated=true;
-
- }catch(e){
-  setStatus("Invalid JSON",false);
- }
 }
 
 async function merge(){
- if(!validated) return setStatus("Validate first",false);
+  if(!validated) return setStatus("Validate first", false);
 
- const pack=JSON.parse(document.getElementById("pack").value);
- const receipt=JSON.parse(document.getElementById("receipt").value);
+  const packRaw = document.getElementById("pack").value.trim();
+  const receiptRaw = document.getElementById("receipt").value.trim();
 
- if(!pack.attachments) pack.attachments=[];
+  const pack = JSON.parse(packRaw);
 
- pack.attachments.push({
-   kind:"JOKER_BINDING",
-   receipt_hash:receipt.receipt_hash,
-   binding:receipt.binding,
-   receipt:receipt,
-   ts:new Date().toISOString()
- });
+  // Merge receipt if provided
+  if(receiptRaw){
+    const receipt = JSON.parse(receiptRaw);
+    if(!pack.attachments) pack.attachments = [];
+    pack.attachments.push({
+      kind: "JOKER_BINDING",
+      receipt_hash: receipt.receipt_hash,
+      binding: receipt.binding,
+      receipt: receipt,
+      ts: new Date().toISOString()
+    });
+  }
 
- delete pack.pack_hash;
- delete pack.signature;
+  // Recompute pack_hash with the SAME canonicalization as verifier
+  delete pack.pack_hash;
+  delete pack.signature;
 
- const newHash=await sha256(stable(pack));
- pack.pack_hash=newHash;
+  const newHash = await sha256(JSON.stringify(pack));
+  pack.pack_hash = newHash;
 
- pack.signature={
-   algo:"NONE",
-   note:"Modified after merge"
- };
+  // Signature is optional; if you modify, mark explicitly
+  pack.signature = receiptRaw
+    ? { algo: "NONE", note: "Modified after merge" }
+    : (pack.signature || { algo: "NONE", note: "Re-hashed by bridge" });
 
- mergedPack=pack;
- document.getElementById("out").textContent=
- JSON.stringify(pack,null,2);
-
- setStatus("MERGED ✔");
+  mergedPack = pack;
+  document.getElementById("out").textContent = JSON.stringify(pack, null, 2);
+  setStatus("MERGED ✔");
 }
 
-function copyOut(){
- if(!mergedPack) return;
- navigator.clipboard.writeText(JSON.stringify(mergedPack,null,2));
- setStatus("Copied");
+async function copyOut(){
+  if(!mergedPack) return setStatus("Nothing to copy", false);
+  await navigator.clipboard.writeText(JSON.stringify(mergedPack, null, 2));
+  setStatus("Copied");
 }
+
+function clearAll(){
+  document.getElementById("pack").value = "";
+  document.getElementById("receipt").value = "";
+  document.getElementById("out").textContent = "{}";
+  validated = false;
+  mergedPack = null;
+  setStatus("Cleared");
+}
+
+document.getElementById("btnValidate").addEventListener("click", validate);
+document.getElementById("btnMerge").addEventListener("click", merge);
+document.getElementById("btnCopy").addEventListener("click", copyOut);
+document.getElementById("btnClear").addEventListener("click", clearAll);
 </script>
+
 </body>
 </html>
