@@ -25,7 +25,12 @@
   },
   "ledger": {
     "proto": "HBCE-SIM-AUDIT-LOG-v1",
-    "policy": ["APPEND_ONLY", "HASH_CHAIN", "AUDIT_FIRST", "FAIL_CLOSED"],
+    "policy": [
+      "APPEND_ONLY",
+      "HASH_CHAIN",
+      "AUDIT_FIRST",
+      "FAIL_CLOSED"
+    ],
     "entries": [
       {
         "ts": "2026-02-22T20:29:12.369Z",
@@ -61,13 +66,17 @@
           "seed": 20260281,
           "scope": "Joker-C2 decision layer bound to Control Core simulation context."
         },
-        "policy": ["HASH_ONLY", "APPEND_ONLY", "AUDIT_FIRST", "FAIL_CLOSED"],
+        "policy": [
+          "HASH_ONLY",
+          "APPEND_ONLY",
+          "AUDIT_FIRST",
+          "FAIL_CLOSED"
+        ],
         "prev_head": "dfe2d654dbee0a3b7b893d8be6c9f1554e374cd86527b9062dec8ddcf2113906",
         "receipt_hash": "da84ef00f4336f8531c5ae03523808e1729487627c3844dc36e7fa4e8d6180c8"
       },
-      "ts": "2026-02-22T20:51:36.646Z"
+      "ts": "2026-02-23T11:41:33.307Z"
     }
   ],
-  "pack_hash": "1aabf59482f92a8b56eeee4eea6ddb3f32cb759a4e12635051e32e092db9f5f2",
-  "signature": { "algo": "NONE", "note": "Modified after merge" }
+  "pack_hash": "24ecfe983d4c6b48f3b276260826c4fb539cd10ae912e0a7414cf81b5781f77d"
 }
