@@ -2,91 +2,127 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>HBCE Verifier — Evidence Pack</title>
-  <meta name="description" content="Verifier for HBCE Evidence Pack: pack hash check + ledger hash-chain verification + replay parameters + optional signature verification." />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>HBCE • Evidence Verifier</title>
   <meta name="theme-color" content="#0b0f14" />
-  <link rel="stylesheet" href="./style.css" />
+  <style>
+    :root{ color-scheme: dark; }
+    body{ background:#0b0f14; color:#e6edf3; font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; margin:0; padding:18px; }
+    .wrap{ max-width:1100px; margin:0 auto; }
+    .top{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; justify-content:space-between; margin-bottom:12px; }
+    .brand .k{ font-size:12px; opacity:.8; letter-spacing:.08em; text-transform:uppercase; }
+    .brand .t{ font-size:20px; font-weight:700; margin-top:4px; }
+    .brand .s{ font-size:13px; opacity:.85; margin-top:4px; }
+    .row{ display:grid; grid-template-columns: 1.15fr .85fr; gap:12px; }
+    @media (max-width: 980px){ .row{ grid-template-columns: 1fr; } }
+    .box{ border:1px solid #2b3137; border-radius:14px; padding:14px; background:#11161c; }
+    textarea{
+      width:100%; min-height:280px; border-radius:10px;
+      background:#0d1117; border:1px solid #30363d; color:#e6edf3;
+      padding:10px; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+      font-size:12.5px; line-height:1.35;
+    }
+    .btns{ display:flex; gap:10px; flex-wrap:wrap; margin-top:10px; }
+    button,a.btn{
+      display:inline-flex; align-items:center; justify-content:center;
+      padding:11px 14px; border-radius:10px;
+      border:1px solid #444; background:#161b22; color:#fff;
+      cursor:pointer; text-decoration:none; user-select:none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    button:hover,a.btn:hover{ background:#1f2630; }
+    button.danger{ border-color:#7a2b2b; background:#2a1212; }
+    button.danger:hover{ background:#3a1515; }
+    .kv{ display:grid; grid-template-columns: 160px 1fr; gap:8px 10px; font-size:13px; }
+    .k{ opacity:.78; }
+    .v{ font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:12.5px; overflow-wrap:anywhere; }
+    .pill-ok{ color:#3fb950; font-weight:700; }
+    .pill-bad{ color:#ff6b6b; font-weight:700; }
+    pre{
+      background:#0d1117; border:1px solid #30363d;
+      padding:10px; border-radius:10px;
+      overflow:auto; margin:0; font-size:12px; line-height:1.35;
+      font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    }
+    .muted{ opacity:.75; font-size:12px; }
+    code{ background:#0d1117; border:1px solid #30363d; padding:1px 6px; border-radius:8px; }
+  </style>
 </head>
-
 <body>
-  <header class="topbar">
-    <div class="brand">
-      <div class="brand__kicker">HBCE • Autonomous Systems Lab</div>
-      <div class="brand__title">Verifier</div>
-      <div class="brand__sub">Evidence Pack validation • hash integrity • ledger chain • optional signature</div>
+  <div class="wrap">
+    <div class="top">
+      <div class="brand">
+        <div class="k">HBCE • Autonomous Systems Lab</div>
+        <div class="t">Verifier</div>
+        <div class="s">Evidence Pack validation • pack_hash integrity • ledger hash-chain • optional Ed25519 signature</div>
+      </div>
+      <div class="btns">
+        <a class="btn" href="./">Back to Control Core</a>
+        <a class="btn" href="./evidence-pack.html">Open Evidence Pack</a>
+        <a class="btn" href="./pack-bridge.html">Open Pack Bridge</a>
+        <a class="btn" href="./binding-console.html">Open Binding Console</a>
+      </div>
     </div>
 
-    <div class="statusbar">
-      <a class="btn btn--ghost" href="./">Back to Control Core</a>
-      <a class="btn btn--ghost" href="./evidence-pack.html">Open Evidence Pack</a>
-      <button class="btn" id="btnVerify" type="button">Verify</button>
+    <div class="row">
+      <section class="box">
+        <div class="muted">
+          Paste an <b>HBCE Evidence Pack JSON</b>. This verifier will recompute <code>pack_hash</code> using the same canonicalization as the builder/bridge.
+        </div>
+        <textarea id="input" spellcheck="false" placeholder="Paste HBCE Evidence Pack JSON here..."></textarea>
+        <div class="btns">
+          <button id="btnVerify" type="button">Verify</button>
+          <button id="btnAuto" type="button">Auto-verify on paste: OFF</button>
+          <button id="btnClear" class="danger" type="button">Clear</button>
+        </div>
+        <div class="muted" style="margin-top:10px;">
+          Canonicalization: <code>stable_sorted_keys</code> for pack hashing. Ledger chain recompute uses <code>JSON.stringify(payload)</code> to match the Control Core log.
+        </div>
+      </section>
+
+      <aside class="box">
+        <h3 style="margin:0 0 10px 0;">Result</h3>
+
+        <div class="kv">
+          <div class="k">Status</div>
+          <div class="v" id="rStatus">—</div>
+
+          <div class="k">Pack Hash</div>
+          <div class="v" id="rPackHash">—</div>
+
+          <div class="k">Recomputed</div>
+          <div class="v" id="rRecomputed">—</div>
+
+          <div class="k">Ledger Chain</div>
+          <div class="v" id="rLedger">—</div>
+
+          <div class="k">Entries</div>
+          <div class="v" id="rEntries">—</div>
+
+          <div class="k">Policy Pack</div>
+          <div class="v" id="rPolicy">—</div>
+
+          <div class="k">Scenario Pack</div>
+          <div class="v" id="rScenario">—</div>
+
+          <div class="k">Seed</div>
+          <div class="v" id="rSeed">—</div>
+
+          <div class="k">Replay Link</div>
+          <div class="v">
+            <button id="btnCopyReplay" type="button">Copy Replay Link</button>
+          </div>
+
+          <div class="k">Signature</div>
+          <div class="v" id="rSig">—</div>
+        </div>
+
+        <h3 style="margin:14px 0 10px 0;">Diagnostics</h3>
+        <pre id="diag" style="height:220px;"></pre>
+      </aside>
     </div>
-  </header>
+  </div>
 
-  <main class="layout" style="grid-template-columns: 1fr 1fr;">
-    <section class="stage">
-      <div class="stage__head">
-        <div class="hint">
-          Paste an <b>HBCE Evidence Pack JSON</b> here. The verifier will:
-          <b>(1)</b> recompute <code>pack_hash</code>,
-          <b>(2)</b> verify the ledger hash chain,
-          <b>(3)</b> extract replay parameters,
-          <b>(4)</b> verify optional <code>signature</code>.
-          <br><br>
-          <b>Canonical:</b> <code>stable_sorted_keys</code> for pack hashing (ledger remains JSON.stringify).
-        </div>
-      </div>
-
-      <textarea id="input" class="textarea" spellcheck="false" placeholder="Paste Evidence Pack JSON here..."></textarea>
-
-      <div class="logbar" style="margin-top:10px;">
-        <button class="btn btn--ghost" id="btnLoadFromLocal" type="button">Load from localStorage</button>
-        <button class="btn btn--danger" id="btnClear" type="button">Clear</button>
-      </div>
-    </section>
-
-    <aside class="panel">
-      <div class="card">
-        <h2>Result</h2>
-        <div class="kv" style="grid-template-columns: 170px 1fr;">
-          <div class="k">Status</div><div class="v" id="rStatus">—</div>
-          <div class="k">Pack Hash</div><div class="v" id="rPackHash">—</div>
-          <div class="k">Recomputed</div><div class="v" id="rRecomputed">—</div>
-          <div class="k">Ledger Chain</div><div class="v" id="rLedger">—</div>
-          <div class="k">Entries</div><div class="v" id="rEntries">—</div>
-        </div>
-      </div>
-
-      <div class="card">
-        <h2>Replay Parameters</h2>
-        <div class="kv" style="grid-template-columns: 170px 1fr;">
-          <div class="k">Policy Pack</div><div class="v" id="rPolicy">—</div>
-          <div class="k">Scenario Pack</div><div class="v" id="rScenario">—</div>
-          <div class="k">Seed</div><div class="v" id="rSeed">—</div>
-        </div>
-
-        <div class="logbar" style="margin-top:10px;">
-          <button class="btn btn--ghost" id="btnCopyReplayLink" type="button">Copy Replay Link</button>
-        </div>
-
-        <p class="muted" style="margin-top:10px;">
-          Replay link opens Control Core with <code>?p=PACK&amp;s=SCENARIO&amp;seed=N</code>.
-        </p>
-      </div>
-
-      <div class="card">
-        <h2>Diagnostics</h2>
-        <pre class="log" id="diag" style="height:240px;"></pre>
-      </div>
-    </aside>
-  </main>
-
-  <footer class="footer">
-    <div class="muted">Static verification • No backend • Deterministic hashing (SHA-256 via WebCrypto)</div>
-  </footer>
-
-  <script src="./crypto.js"></script>
   <script src="./verifier.js"></script>
 </body>
 </html>
