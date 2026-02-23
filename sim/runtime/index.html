@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>HBCE Autonomous Runtime v0.1</title>
+<meta name="theme-color" content="#0b0f14">
+
+<style>
+body{background:#0b0f14;color:#e6edf3;font-family:system-ui;margin:0;padding:30px}
+.wrap{max-width:1100px;margin:auto}
+.card{
+  background:#11161c;
+  border:1px solid #2b3137;
+  border-radius:14px;
+  padding:20px;
+  margin-bottom:20px;
+}
+.grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(260px,1fr));
+  gap:16px;
+}
+.status{font-weight:bold}
+.ok{color:#3fb950}
+.warn{color:#ff6b6b}
+.kicker{opacity:.6;font-size:13px;margin-bottom:6px}
+button{
+  padding:10px 14px;
+  border-radius:8px;
+  border:1px solid #444;
+  background:#161b22;
+  color:white;
+  cursor:pointer;
+}
+button:hover{background:#1f2630}
+pre{background:#0d1117;padding:12px;border-radius:8px;overflow:auto}
+</style>
+</head>
+
+<body>
+<div class="wrap">
+
+<h1>HBCE Autonomous Runtime v0.1</h1>
+<p>
+Hardware-independent decision layer bound to identity and audit infrastructure.
+</p>
+
+<div class="grid">
+
+<div class="card">
+<div class="kicker">IDENTITY</div>
+<div>Machine ID: <span id="machineId">HBCE-AI-UNIT-001</span></div>
+<div>Operator: <span id="operatorId">Manuel Coletta IPR-Biologico</span></div>
+<div>AI Layer: <span id="aiId">Joker-C2 IPR-AI-Cibernetico</span></div>
+</div>
+
+<div class="card">
+<div class="kicker">POLICY CONTEXT</div>
+<div>Policy Pack: <span id="policy">HUMAN_PROXIMITY</span></div>
+<div>Scenario: <span id="scenario">OFFICE</span></div>
+<div>Seed: <span id="seed">20260281</span></div>
+</div>
+
+<div class="card">
+<div class="kicker">RUNTIME STATUS</div>
+<div>Status: <span id="runtimeStatus" class="status warn">HALTED</span></div>
+<div>Last Evidence Hash:</div>
+<pre id="lastHash">—</pre>
+</div>
+
+</div>
+
+<div class="card">
+<button onclick="start()">Start Runtime</button>
+<button onclick="stop()">Stop Runtime</button>
+<button onclick="generateEvidence()">Generate Evidence Snapshot</button>
+</div>
+
+<div class="card">
+<div class="kicker">EVENT LOG</div>
+<pre id="log"></pre>
+</div>
+
+</div>
+
+<script>
+let running=false;
+let eventCounter=0;
+
+function log(msg){
+  const el=document.getElementById("log");
+  el.textContent+=msg+"\n";
+}
+
+function setStatus(text,ok){
+  const el=document.getElementById("runtimeStatus");
+  el.textContent=text;
+  el.className="status "+(ok?"ok":"warn");
+}
+
+function start(){
+  if(running) return;
+  running=true;
+  setStatus("RUNNING",true);
+  log("Runtime started.");
+}
+
+function stop(){
+  if(!running) return;
+  running=false;
+  setStatus("HALTED",false);
+  log("Runtime halted.");
+}
+
+async function sha256(str){
+  const data=new TextEncoder().encode(str);
+  const digest=await crypto.subtle.digest("SHA-256",data);
+  return [...new Uint8Array(digest)]
+    .map(b=>b.toString(16).padStart(2,"0"))
+    .join("");
+}
+
+async function generateEvidence(){
+  if(!running){
+    log("Cannot generate evidence while halted.");
+    return;
+  }
+
+  const snapshot={
+    ts:new Date().toISOString(),
+    machine:"HBCE-AI-UNIT-001",
+    policy:document.getElementById("policy").textContent,
+    scenario:document.getElementById("scenario").textContent,
+    seed:document.getElementById("seed").textContent,
+    event:eventCounter++
+  };
+
+  const hash=await sha256(JSON.stringify(snapshot));
+
+  document.getElementById("lastHash").textContent=hash;
+  log("Evidence generated: "+hash);
+}
+</script>
+
+</body>
+</html>
