@@ -1,180 +1,197 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>HBCE • Pack Bridge</title>
-<meta name="theme-color" content="#0b0f14">
-
-<style>
-body{background:#0b0f14;color:#e6edf3;font-family:system-ui;margin:0;padding:20px}
-.wrap{max-width:1100px;margin:auto}
-.box{border:1px solid #2b3137;border-radius:12px;padding:14px;margin-bottom:14px;background:#11161c}
-textarea{width:100%;min-height:180px;background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:8px;padding:10px;font-family:monospace}
-button{padding:10px 14px;border-radius:8px;border:1px solid #444;background:#161b22;color:white;cursor:pointer}
-button:hover{background:#1f2630}
-pre{background:#0d1117;padding:12px;border-radius:8px;overflow:auto}
-.ok{color:#3fb950}
-.bad{color:#ff6b6b}
-.row{display:flex;gap:10px;flex-wrap:wrap}
-.muted{opacity:.8}
-</style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>HBCE • Pack Bridge</title>
+  <meta name="theme-color" content="#0b0f14">
+  <style>
+    :root{ color-scheme: dark; }
+    body{background:#0b0f14;color:#e6edf3;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;margin:0;padding:18px}
+    .wrap{max-width:1100px;margin:auto}
+    .top{display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between;margin-bottom:12px}
+    .k{font-size:12px;opacity:.8;letter-spacing:.08em;text-transform:uppercase}
+    .t{font-size:20px;font-weight:700;margin-top:4px}
+    .box{border:1px solid #2b3137;border-radius:14px;padding:14px;margin-bottom:12px;background:#11161c}
+    textarea{width:100%;min-height:190px;background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:10px;padding:10px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px;line-height:1.35}
+    button,a.btn{display:inline-flex;align-items:center;justify-content:center;padding:11px 14px;border-radius:10px;border:1px solid #444;background:#161b22;color:white;cursor:pointer;text-decoration:none;user-select:none;-webkit-tap-highlight-color:transparent}
+    button:hover,a.btn:hover{background:#1f2630}
+    .btns{display:flex;gap:10px;flex-wrap:wrap}
+    pre{background:#0d1117;border:1px solid #30363d;padding:10px;border-radius:10px;overflow:auto;margin:0;font-size:12px;line-height:1.35;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+    .ok{color:#3fb950;font-weight:700}
+    .bad{color:#ff6b6b;font-weight:700}
+    .muted{opacity:.78;font-size:12px}
+    code{background:#0d1117;border:1px solid #30363d;padding:1px 6px;border-radius:8px}
+  </style>
 </head>
-
 <body>
 <div class="wrap">
+  <div class="top">
+    <div>
+      <div class="k">HBCE • Autonomous Systems Lab</div>
+      <div class="t">Pack Bridge</div>
+      <div class="muted">Merge a Binding Receipt into an Evidence Pack and regenerate <code>pack_hash</code> (canonical stable-sorted-keys).</div>
+    </div>
+    <div class="btns">
+      <a class="btn" href="./">Back to Control Core</a>
+      <a class="btn" href="./binding-console.html">Open Binding Console</a>
+      <a class="btn" href="./evidence-pack.html">Open Evidence Pack</a>
+      <a class="btn" href="./verifier.html">Open Verifier</a>
+    </div>
+  </div>
 
-<h2>HBCE Evidence + Binding Bridge</h2>
-<p class="muted">
-Merge a <b>Binding Receipt</b> inside an <b>Evidence Pack</b> and regenerate <code>pack_hash</code>.
-<br>
-<b>Canonical rule:</b> pack_hash is SHA-256 of <code>JSON.stringify(payload)</code> where payload = pack without <code>pack_hash</code> and without <code>signature</code>.
-</p>
+  <div class="box">
+    <h3 style="margin:0 0 8px 0;">1) Evidence Pack JSON</h3>
+    <textarea id="pack" spellcheck="false" placeholder="Paste HBCE Evidence Pack JSON..."></textarea>
+  </div>
 
-<div class="box">
-<h3>1) Evidence Pack JSON</h3>
-<textarea id="pack" spellcheck="false" placeholder="Paste HBCE Evidence Pack JSON here..."></textarea>
-</div>
+  <div class="box">
+    <h3 style="margin:0 0 8px 0;">2) Binding Receipt JSON</h3>
+    <textarea id="receipt" spellcheck="false" placeholder="Paste HBCE Binding Receipt JSON..."></textarea>
+  </div>
 
-<div class="box">
-<h3>2) Binding Receipt JSON (optional)</h3>
-<textarea id="receipt" spellcheck="false" placeholder="Paste HBCE Binding Receipt JSON here (optional)..."></textarea>
-<p class="muted" style="margin:8px 0 0 0">
-If you leave receipt empty, Bridge will simply recompute <code>pack_hash</code> for the pack you pasted.
-</p>
-</div>
+  <div class="box">
+    <div class="btns">
+      <button id="btnValidate" type="button">Validate</button>
+      <button id="btnMerge" type="button">Merge → New Pack</button>
+      <button id="btnCopy" type="button">Copy New Pack JSON</button>
+      <button id="btnClear" type="button">Clear</button>
+    </div>
+    <div class="muted" style="margin-top:10px;">
+      Receipt validation checks: <code>receipt_hash</code> == SHA-256(stable(payloadWithout(receipt_hash))).
+    </div>
+  </div>
 
-<div class="box">
-<div class="row">
-  <button type="button" id="btnValidate">Validate</button>
-  <button type="button" id="btnMerge">Merge → New Pack</button>
-  <button type="button" id="btnCopy">Copy</button>
-  <button type="button" id="btnClear">Clear</button>
-</div>
-</div>
+  <div class="box">
+    <h3 style="margin:0 0 8px 0;">Status</h3>
+    <div id="status">—</div>
+  </div>
 
-<div class="box">
-<h3>Status</h3>
-<div id="status">—</div>
-</div>
-
-<div class="box">
-<h3>New Pack</h3>
-<pre id="out">{}</pre>
-</div>
-
+  <div class="box">
+    <h3 style="margin:0 0 8px 0;">New Pack JSON (post-merge)</h3>
+    <pre id="out">{}</pre>
+  </div>
 </div>
 
 <script>
 'use strict';
 
-let validated = false;
-let mergedPack = null;
+const $ = (id) => document.getElementById(id);
 
-function setStatus(txt, ok=true){
-  document.getElementById("status").innerHTML =
-    ok ? `<span class="ok">${txt}</span>` : `<span class="bad">${txt}</span>`;
-}
+function safeParse(raw){ try{ return JSON.parse(raw); } catch{ return null; } }
 
-function safeParse(raw){
-  try{ return JSON.parse(raw); }catch(_e){ return null; }
+function stableStringify(v){
+  if(v === null) return 'null';
+  const t = typeof v;
+  if(t === 'number') return Number.isFinite(v) ? String(v) : 'null';
+  if(t === 'boolean') return v ? 'true' : 'false';
+  if(t === 'string') return JSON.stringify(v);
+  if(Array.isArray(v)) return '[' + v.map(stableStringify).join(',') + ']';
+  if(t === 'object'){
+    const keys = Object.keys(v).sort();
+    return '{' + keys.map(k => JSON.stringify(k) + ':' + stableStringify(v[k])).join(',') + '}';
+  }
+  return 'null';
 }
 
 function hex(buf){
   return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2,'0')).join('');
 }
-
-async function sha256(str){
+async function sha256Hex(str){
   const data = new TextEncoder().encode(str);
   const digest = await crypto.subtle.digest('SHA-256', data);
   return hex(digest);
 }
 
+function setStatus(txt, ok=true){
+  $('status').innerHTML = ok ? '<span class="ok">' + txt + '</span>' : '<span class="bad">' + txt + '</span>';
+}
+
+let validated = false;
+let mergedPack = null;
+
 async function validate(){
-  const packRaw = document.getElementById("pack").value.trim();
-  const receiptRaw = document.getElementById("receipt").value.trim();
+  const pack = safeParse($('pack').value.trim());
+  const receipt = safeParse($('receipt').value.trim());
 
-  const pack = safeParse(packRaw);
-  if(!pack) return setStatus("Invalid Evidence Pack JSON", false);
-  if(pack.proto !== "HBCE-EVIDENCE-PACK-v1") return setStatus("Wrong evidence pack proto", false);
+  if(!pack || !receipt){
+    validated = false;
+    return setStatus('Invalid JSON in inputs', false);
+  }
+  if(pack.proto !== 'HBCE-EVIDENCE-PACK-v1'){
+    validated = false;
+    return setStatus('Wrong evidence pack proto', false);
+  }
+  if(receipt.proto !== 'HBCE-BINDING-RECEIPT-v1'){
+    validated = false;
+    return setStatus('Wrong receipt proto', false);
+  }
 
-  // Receipt is optional; if present, validate it.
-  if(receiptRaw){
-    const receipt = safeParse(receiptRaw);
-    if(!receipt) return setStatus("Invalid Receipt JSON", false);
-    if(receipt.proto !== "HBCE-BINDING-RECEIPT-v1") return setStatus("Wrong receipt proto", false);
+  // verify receipt_hash
+  const r = JSON.parse(JSON.stringify(receipt));
+  const claimed = r.receipt_hash;
+  delete r.receipt_hash;
 
-    // Verify receipt hash (canonical = JSON.stringify without receipt_hash)
-    const r = JSON.parse(JSON.stringify(receipt));
-    const rh = r.receipt_hash;
-    delete r.receipt_hash;
-
-    const recomputed = await sha256(JSON.stringify(r));
-    if(recomputed !== rh) return setStatus("Receipt hash mismatch", false);
+  const recomputed = await sha256Hex(stableStringify(r));
+  if(!claimed || recomputed !== claimed){
+    validated = false;
+    return setStatus('Receipt hash mismatch', false);
   }
 
   validated = true;
-  setStatus("VALIDATED");
+  setStatus('VALIDATED');
 }
 
 async function merge(){
-  if(!validated) return setStatus("Validate first", false);
+  if(!validated) return setStatus('Validate first', false);
 
-  const packRaw = document.getElementById("pack").value.trim();
-  const receiptRaw = document.getElementById("receipt").value.trim();
+  const pack = JSON.parse($('pack').value.trim());
+  const receipt = JSON.parse($('receipt').value.trim());
 
-  const pack = JSON.parse(packRaw);
+  if(!Array.isArray(pack.attachments)) pack.attachments = [];
 
-  // Merge receipt if provided
-  if(receiptRaw){
-    const receipt = JSON.parse(receiptRaw);
-    if(!pack.attachments) pack.attachments = [];
-    pack.attachments.push({
-      kind: "JOKER_BINDING",
-      receipt_hash: receipt.receipt_hash,
-      binding: receipt.binding,
-      receipt: receipt,
-      ts: new Date().toISOString()
-    });
-  }
+  pack.attachments.push({
+    kind: 'JOKER_BINDING',
+    receipt_hash: receipt.receipt_hash,
+    binding: receipt.binding,
+    receipt: receipt,
+    ts: new Date().toISOString()
+  });
 
-  // Recompute pack_hash with the SAME canonicalization as verifier
+  // rebuild pack_hash in canonical form
   delete pack.pack_hash;
   delete pack.signature;
 
-  const newHash = await sha256(JSON.stringify(pack));
-  pack.pack_hash = newHash;
+  const material = JSON.parse(JSON.stringify(pack));
+  const newHash = await sha256Hex(stableStringify(material));
 
-  // Signature is optional; if you modify, mark explicitly
-  pack.signature = receiptRaw
-    ? { algo: "NONE", note: "Modified after merge" }
-    : (pack.signature || { algo: "NONE", note: "Re-hashed by bridge" });
+  pack.pack_hash = newHash;
+  pack.signature = { algo:'NONE', note:'Modified after merge' };
 
   mergedPack = pack;
-  document.getElementById("out").textContent = JSON.stringify(pack, null, 2);
-  setStatus("MERGED ✔");
+  $('out').textContent = JSON.stringify(pack, null, 2);
+  setStatus('MERGED ✔');
 }
 
 async function copyOut(){
-  if(!mergedPack) return setStatus("Nothing to copy", false);
+  if(!mergedPack) return setStatus('Nothing to copy', false);
   await navigator.clipboard.writeText(JSON.stringify(mergedPack, null, 2));
-  setStatus("Copied");
+  setStatus('Copied');
 }
 
 function clearAll(){
-  document.getElementById("pack").value = "";
-  document.getElementById("receipt").value = "";
-  document.getElementById("out").textContent = "{}";
-  validated = false;
+  $('pack').value = '';
+  $('receipt').value = '';
+  $('out').textContent = '{}';
   mergedPack = null;
-  setStatus("Cleared");
+  validated = false;
+  $('status').textContent = '—';
 }
 
-document.getElementById("btnValidate").addEventListener("click", validate);
-document.getElementById("btnMerge").addEventListener("click", merge);
-document.getElementById("btnCopy").addEventListener("click", copyOut);
-document.getElementById("btnClear").addEventListener("click", clearAll);
+$('btnValidate').addEventListener('click', validate);
+$('btnMerge').addEventListener('click', merge);
+$('btnCopy').addEventListener('click', copyOut);
+$('btnClear').addEventListener('click', clearAll);
 </script>
-
 </body>
 </html>
