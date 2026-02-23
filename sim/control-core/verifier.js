@@ -1,219 +1,315 @@
 'use strict';
 
-/**
- * HBCE Verifier v1 (self-contained)
- * - pack_hash: SHA-256(stableStringify(payloadWithout(pack_hash, signature)))
- * - ledger chain: SHA-256(JSON.stringify(entryPayloadWithout(hash)))
- *   (kept as JSON.stringify to match Control Core generation)
- */
+/*
+  HBCE • Evidence Pack Verifier (browser-only)
+  - Deterministic pack_hash recomputation (stable canonical JSON: sorted keys)
+  - Ledger hash-chain verification (keeps JSON.stringify(payload) to match Control Core log hashing)
+  - Optional Ed25519 signature verification (if HBCE_CRYPTO is available)
+  - FAIL overlay hook: showOverlay()/closeOverlay() if present
+*/
 
+const STORAGE_KEY = 'HBCE_CONTROL_CORE_STATE_V1';
+
+// --- DOM helpers ---
 const $ = (id) => document.getElementById(id);
 
+function setText(id, v){
+  const el = $(id);
+  if(el) el.textContent = (v ?? '—');
+}
+
+function writeDiag(obj){
+  const el = $('diag');
+  if(el) el.textContent = JSON.stringify(obj, null, 2);
+}
+
 function safeParse(raw){
-  try { return JSON.parse(raw); } catch { return null; }
+  try { return JSON.parse(raw); } catch(_e){ return null; }
 }
 
+// --- crypto helpers ---
 function hex(buf){
-  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2,'0')).join('');
+  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-async function sha256Hex(str){
+async function sha256(str){
   const data = new TextEncoder().encode(str);
   const digest = await crypto.subtle.digest('SHA-256', data);
   return hex(digest);
 }
 
-/** Stable stringify with sorted keys (canonical for pack hashing) */
-function stableStringify(v){
-  if(v === null) return 'null';
-  const t = typeof v;
-  if(t === 'number') return Number.isFinite(v) ? String(v) : 'null';
-  if(t === 'boolean') return v ? 'true' : 'false';
-  if(t === 'string') return JSON.stringify(v);
-  if(Array.isArray(v)) return '[' + v.map(stableStringify).join(',') + ']';
-  if(t === 'object'){
-    const keys = Object.keys(v).sort();
-    return '{' + keys.map(k => JSON.stringify(k) + ':' + stableStringify(v[k])).join(',') + '}';
+/*
+  Stable canonical stringify (sorted keys) to avoid “same object, different key order” hash mismatch.
+  IMPORTANT: This must match your pack producer(s). If producers use stable ordering, verifier must too.
+*/
+function stableStringify(value){
+  if(value === null) return 'null';
+
+  const t = typeof value;
+
+  if(t === 'number'){
+    // JSON.stringify(NaN) => null. Keep JSON semantics.
+    return Number.isFinite(value) ? String(value) : 'null';
   }
+  if(t === 'boolean') return value ? 'true' : 'false';
+  if(t === 'string') return JSON.stringify(value);
+
+  if(Array.isArray(value)){
+    return '[' + value.map(stableStringify).join(',') + ']';
+  }
+
+  if(t === 'object'){
+    const keys = Object.keys(value).sort();
+    return '{' + keys.map(k => JSON.stringify(k) + ':' + stableStringify(value[k])).join(',') + '}';
+  }
+
+  // functions / undefined are not valid JSON; JSON.stringify would drop them in objects.
+  // In stable canonicalization we treat them as null to be fail-closed.
   return 'null';
 }
 
-function setText(id, v){ $(id).textContent = (v ?? '—'); }
-function writeDiag(obj){ $('diag').textContent = JSON.stringify(obj, null, 2); }
-
+// --- replay link helper ---
 function buildReplayLink(pack){
-  const replay = pack?.replay || {};
+  // target Control Core root folder
   const base = location.origin + location.pathname.replace(/\/verifier\.html$/, '/');
   const u = new URL(base);
+  const replay = pack?.replay || {};
   if(replay.policy_pack) u.searchParams.set('p', replay.policy_pack);
   if(replay.scenario_pack) u.searchParams.set('s', replay.scenario_pack);
   if(Number.isFinite(replay.seed)) u.searchParams.set('seed', String(replay.seed));
   return u.toString();
 }
 
+// --- FAIL overlay hooks (optional) ---
+function showFailOverlay(){
+  // Prefer page-level helpers if defined (from verifier.html)
+  if(typeof window.showOverlay === 'function') return window.showOverlay();
+  const ov = $('failOverlay');
+  if(ov) ov.style.display = 'flex';
+}
+
+function hideFailOverlay(){
+  if(typeof window.closeOverlay === 'function') return window.closeOverlay();
+  const ov = $('failOverlay');
+  if(ov) ov.style.display = 'none';
+}
+
+// --- Ledger chain verification ---
+// IMPORTANT: This intentionally uses JSON.stringify(payload), because your Control Core ledger hashes
+// were generated that way. If you change ledger hashing to stableStringify, update both sides together.
 async function verifyLedgerChain(ledger){
-  if(!ledger || !Array.isArray(ledger.entries)) {
+  if(!ledger || !Array.isArray(ledger.entries)){
     return { ok:false, reason:'MISSING_LEDGER' };
   }
+
   let prev = 'GENESIS';
-  for(let i=0;i<ledger.entries.length;i++){
+
+  for(let i = 0; i < ledger.entries.length; i++){
     const e = ledger.entries[i];
+    if(!e || typeof e !== 'object'){
+      return { ok:false, reason:`ENTRY_NOT_OBJECT_AT_${i}` };
+    }
+
     const { hash, ...payload } = e;
 
     if(payload.prev_hash !== prev){
-      return { ok:false, reason:`PREV_HASH_MISMATCH_AT_${i}`, expected_prev: prev, found_prev: payload.prev_hash };
+      return {
+        ok:false,
+        reason:`PREV_HASH_MISMATCH_AT_${i}`,
+        expected_prev: prev,
+        found_prev: payload.prev_hash
+      };
     }
 
-    // IMPORTANT: match Control Core hashing
-    const recomputed = await sha256Hex(JSON.stringify(payload));
+    const recomputed = await sha256(JSON.stringify(payload));
+
     if(recomputed !== hash){
-      return { ok:false, reason:`HASH_MISMATCH_AT_${i}`, expected_hash: recomputed, found_hash: hash };
+      return {
+        ok:false,
+        reason:`HASH_MISMATCH_AT_${i}`,
+        expected_hash: recomputed,
+        found_hash: hash
+      };
     }
+
     prev = hash;
   }
+
+  // Some packs keep ledger.head. We can check it (fail-closed optional).
+  if(ledger.head && ledger.head !== prev){
+    return { ok:false, reason:'LEDGER_HEAD_MISMATCH', expected_head: prev, found_head: ledger.head, entries: ledger.entries.length };
+  }
+
   return { ok:true, head: prev, entries: ledger.entries.length };
 }
 
+// --- Pack hash verification ---
 async function verifyPackHash(pack){
   if(!pack || pack.proto !== 'HBCE-EVIDENCE-PACK-v1'){
     return { ok:false, status:'INVALID', reason:'NOT_EVIDENCE_PACK_V1' };
   }
-  const pack_hash = pack.pack_hash;
-  const payload = JSON.parse(JSON.stringify(pack));
-  delete payload.pack_hash;
+
+  const { pack_hash, ...payload } = pack;
+
+  // v1 canonical: hash material excludes pack_hash and excludes signature
   delete payload.signature;
 
-  const recomputed = await sha256Hex(stableStringify(payload));
+  const recomputed = await sha256(stableStringify(payload));
+
   if(!pack_hash){
-    return { ok:false, status:'DRAFT', reason:'MISSING_PACK_HASH', recomputed };
+    return { ok:false, status:'DRAFT_MISSING_PACK_HASH', reason:'MISSING_PACK_HASH', recomputed };
   }
+
   const ok = (recomputed === pack_hash);
   return { ok, status: ok ? 'OK' : 'MISMATCH', pack_hash, recomputed };
 }
 
-async function verifyOptionalSignature(pack){
+// --- Optional signature verification (Ed25519) ---
+// Requires crypto.js providing HBCE_CRYPTO.importEd25519Public + verifyEd25519.
+async function verifySignature(pack){
   const sig = pack?.signature;
-  if(!sig) return { ok:false, status:'MISSING' };
 
-  if(sig.algo === 'NONE') return { ok:true, status:'UNSIGNED' };
+  if(!sig){
+    return { ok:false, status:'MISSING', reason:'NO_SIGNATURE_OBJECT' };
+  }
 
-  // We only validate Ed25519 if the browser supports it.
-  if(sig.algo !== 'Ed25519') return { ok:false, status:'INVALID', reason:'UNSUPPORTED_ALGO' };
-  if(sig.signed !== 'pack_hash') return { ok:false, status:'INVALID', reason:'SIGNED_FIELD_NOT_pack_hash' };
-  if(!sig.publicKey_b64u || !sig.sig_b64u) return { ok:false, status:'INVALID', reason:'MISSING_SIGNATURE_FIELDS' };
+  if(sig.algo !== 'Ed25519'){
+    // Treat as "unsigned" rather than hard fail; pack validity is hash+ledger.
+    return { ok:false, status:'UNSIGNED', reason: sig.reason || 'NOT_ED25519' };
+  }
 
-  // Try WebCrypto Ed25519 (not universal on Android builds)
+  if(sig.signed !== 'pack_hash'){
+    return { ok:false, status:'INVALID', reason:'SIGNED_FIELD_NOT_pack_hash' };
+  }
+
+  if(!sig.publicKey_b64u || !sig.sig_b64u){
+    return { ok:false, status:'INVALID', reason:'MISSING_SIGNATURE_FIELDS' };
+  }
+
+  if(typeof window.HBCE_CRYPTO?.importEd25519Public !== 'function' || typeof window.HBCE_CRYPTO?.verifyEd25519 !== 'function'){
+    return { ok:false, status:'ERROR', reason:'HBCE_CRYPTO_NOT_AVAILABLE' };
+  }
+
   try{
-    const pub = await importEd25519Public(sig.publicKey_b64u);
-    const ok = await verifyEd25519(pub, pack.pack_hash, sig.sig_b64u);
+    const pub = await window.HBCE_CRYPTO.importEd25519Public(sig.publicKey_b64u);
+    const ok = await window.HBCE_CRYPTO.verifyEd25519(pub, pack.pack_hash, sig.sig_b64u);
     return { ok, status: ok ? 'OK' : 'BAD_SIG' };
   }catch(e){
     return { ok:false, status:'ERROR', reason:String(e?.message || e) };
   }
 }
 
-/* --- Minimal Ed25519 helpers (WebCrypto). If unsupported -> throws. --- */
-function b64uToBytes(b64u){
-  const b64 = b64u.replace(/-/g,'+').replace(/_/g,'/') + '==='.slice((b64u.length + 3) % 4);
-  const bin = atob(b64);
-  const out = new Uint8Array(bin.length);
-  for(let i=0;i<bin.length;i++) out[i] = bin.charCodeAt(i);
-  return out;
-}
-async function importEd25519Public(publicKey_b64u){
-  const raw = b64uToBytes(publicKey_b64u);
-  return crypto.subtle.importKey('raw', raw, { name:'Ed25519' }, true, ['verify']);
-}
-async function verifyEd25519(publicKey, messageStr, sig_b64u){
-  const sig = b64uToBytes(sig_b64u);
-  const msg = new TextEncoder().encode(messageStr);
-  const ok = await crypto.subtle.verify({ name:'Ed25519' }, publicKey, sig, msg);
-  return !!ok;
-}
-
-let AUTO = false;
-let lastReplayLink = '';
-
+// --- Main verify runner ---
 async function runVerify(){
-  const raw = $('input').value.trim();
+  const inputEl = $('input');
+  const raw = (inputEl?.value || '').trim();
+
   const pack = safeParse(raw);
 
   if(!pack){
-    setText('rStatus', 'INVALID_JSON');
-    writeDiag({ error:'Invalid JSON. Paste a full HBCE Evidence Pack.' });
+    setText('status', 'INVALID_JSON');
+    setText('ph', '—');
+    setText('rc', '—');
+    setText('lg', '—');
+    setText('en', '—');
+    writeDiag({ error:'Invalid JSON. Paste a full Evidence Pack.' });
+    showFailOverlay();
     return;
   }
 
   const ph = await verifyPackHash(pack);
   const lc = await verifyLedgerChain(pack.ledger);
-  const sg = await verifyOptionalSignature(pack);
+  const sg = await verifySignature(pack);
 
-  const status = (ph.status === 'OK' && lc.ok) ? 'VALID' : 'INVALID';
+  let status = 'INVALID';
 
-  setText('rStatus', status === 'VALID' ? 'VALID' : 'INVALID');
-  $('rStatus').className = status === 'VALID' ? 'pill-ok' : 'pill-bad';
+  if(ph.status === 'OK' && lc.ok){
+    status = 'VALID';
+  }else if(ph.status === 'DRAFT_MISSING_PACK_HASH' && lc.ok){
+    status = 'DRAFT';
+  }else{
+    status = 'INVALID';
+  }
 
-  setText('rPackHash', ph.pack_hash || '—');
-  setText('rRecomputed', ph.recomputed || '—');
-  setText('rLedger', lc.ok ? 'OK' : `BROKEN (${lc.reason})`);
-  setText('rEntries', lc.entries ?? '—');
+  // UI
+  setText('status', status);
+  setText('ph', ph.pack_hash || '—');
+  setText('rc', ph.recomputed || '—');
+  setText('lg', lc.ok ? 'OK' : `BROKEN (${lc.reason})`);
+  setText('en', (lc.entries ?? '—'));
 
-  setText('rPolicy', pack?.replay?.policy_pack ?? '—');
-  setText('rScenario', pack?.replay?.scenario_pack ?? '—');
-  setText('rSeed', (pack?.replay?.seed ?? '—'));
+  // Fail overlay behavior: only for INVALID
+  if(status === 'VALID') hideFailOverlay();
+  if(status === 'INVALID') showFailOverlay();
 
-  setText('rSig', sg.status + (sg.reason ? ` (${sg.reason})` : ''));
-
-  lastReplayLink = buildReplayLink(pack);
-
+  // Diagnostics
   writeDiag({
     status,
     pack_hash_check: ph,
     ledger_chain_check: lc,
     signature_check: sg,
-    replay: pack.replay,
+    replay: pack.replay || null,
+    replay_link: buildReplayLink(pack),
+    meta: { proto: pack.proto, kind: pack.kind, ts: pack.ts || null },
     canonical: 'stable_sorted_keys',
-    ledger_recompute: 'JSON.stringify(payload)',
-    meta: { proto: pack.proto, kind: pack.kind, ts: pack.ts }
+    hash: 'SHA-256'
   });
+
+  // Store replay link on a dataset if a button exists (optional in some layouts)
+  const btn = $('btnCopyReplayLink');
+  if(btn) btn.dataset.link = buildReplayLink(pack);
 }
 
+// --- Optional extras (if your layout has these buttons) ---
 async function copyReplayLink(){
-  if(!lastReplayLink) await runVerify();
-  if(!lastReplayLink) return;
-  await navigator.clipboard.writeText(lastReplayLink);
-  writeDiag({ copied_replay_link: lastReplayLink });
+  const btn = $('btnCopyReplayLink');
+  let link = btn?.dataset?.link;
+
+  if(!link){
+    await runVerify();
+    link = btn?.dataset?.link;
+  }
+
+  if(link){
+    await navigator.clipboard.writeText(link);
+    writeDiag({ copied_replay_link: link });
+  }
 }
 
 function clearAll(){
-  $('input').value = '';
-  lastReplayLink = '';
-  setText('rStatus','—'); $('rStatus').className='';
-  setText('rPackHash','—');
-  setText('rRecomputed','—');
-  setText('rLedger','—');
-  setText('rEntries','—');
-  setText('rPolicy','—');
-  setText('rScenario','—');
-  setText('rSeed','—');
-  setText('rSig','—');
+  const inputEl = $('input');
+  if(inputEl) inputEl.value = '';
+  hideFailOverlay();
   writeDiag({ cleared:true });
 }
 
-function setAuto(){
-  AUTO = !AUTO;
-  $('btnAuto').textContent = 'Auto-verify on paste: ' + (AUTO ? 'ON' : 'OFF');
+// --- Event wiring (robust on mobile) ---
+function wire(){
+  // Expose for inline HTML buttons (if present)
+  window.verify = runVerify;
+  window.clearAll = clearAll;
+
+  // If layout has these IDs, wire them too
+  const btnVerify = $('btnVerify');
+  if(btnVerify) btnVerify.addEventListener('click', runVerify, { passive:true });
+
+  const btnClear = $('btnClear');
+  if(btnClear) btnClear.addEventListener('click', clearAll, { passive:true });
+
+  const btnCopy = $('btnCopyReplayLink');
+  if(btnCopy) btnCopy.addEventListener('click', copyReplayLink, { passive:true });
+
+  // Optional autoverify
+  if(location.hash === '#autoverify'){
+    setTimeout(() => {
+      const inputEl = $('input');
+      if(inputEl && inputEl.value.trim()) runVerify();
+    }, 80);
+  }
 }
 
-$('btnVerify').addEventListener('click', runVerify);
-$('btnClear').addEventListener('click', clearAll);
-$('btnCopyReplay').addEventListener('click', copyReplayLink);
-$('btnAuto').addEventListener('click', setAuto);
-
-// Android-safe auto verify: debounce on input changes
-let t = null;
-$('input').addEventListener('input', () => {
-  if(!AUTO) return;
-  clearTimeout(t);
-  t = setTimeout(() => runVerify(), 120);
-});
+if(document.readyState === 'loading'){
+  document.addEventListener('DOMContentLoaded', wire);
+}else{
+  wire();
+}
